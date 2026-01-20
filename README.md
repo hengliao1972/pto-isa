@@ -326,12 +326,14 @@ void dynamic_softmax(PTORuntime* rt, float* input, float* output,
 
 ```python
 # 定义每个块大小对应的 Tile 行数
+# Key 0 是特殊标记，表示 residual iterations (< min_range) 的 tile 大小
 TILE_ROWS_BY_LEVEL = {
     4096: 64,   # 大块: 64 行 Tile
     2048: 64,   # 大块: 64 行 Tile
     1024: 64,   # 中块: 64 行 Tile
     512:  64,   # 小块: 64 行 Tile
-    256:  64,   # 最小块: 64 行 Tile
+    256:  64,   # 最小量化块: 64 行 Tile
+    0:    32,   # Residual (< min_range): 32 行 Tile (更细粒度)
 }
 
 .for_loop("tile_i", 0, "num_tiles", 1, 
@@ -569,26 +571,39 @@ void run_llama_layer(int seq_len) {
 
 ### 4.4 LLaMA 7B 性能统计
 
-以下是 LLaMA 7B Layer（含 Flash Attention）的 Task Graph 构建性能：
+以下是 LLaMA 7B Layer（含 Flash Attention + 自适应 Tile 优化）的 Task Graph 构建性能：
 
-| Sequence Length | Tiles | Tasks | Build Time | Tasks/ms | Memory | Per-Task |
-|-----------------|-------|-------|------------|----------|--------|----------|
-| **1K** | 32 | 3,584 | 0.855 ms | 4,192 | 9.81 MB | 2,872 B |
-| **2K** | 64 | 13,312 | 2.518 ms | 5,287 | 36.41 MB | 2,868 B |
-| **3K** | 96 | 29,184 | 6.036 ms | 4,835 | 79.79 MB | 2,867 B |
-| **4K** | 128 | 51,200 | 9.184 ms | 5,575 | 139.95 MB | 2,866 B |
+| SeqLen | Tiles | 实际迭代 | Tasks | 无优化 | Build Time | Tasks/ms | Memory | 节省 |
+|--------|-------|---------|-------|--------|------------|----------|--------|------|
+| **1K** | 32 | 16 | 1,024 | 3,584 | 0.144 ms | 7,111 | 2.81 MB | 71% |
+| **2K** | 64 | 32 | 3,584 | 13,312 | 0.444 ms | 8,072 | 9.81 MB | 73% |
+| **4K** | 128 | 64 | 13,312 | 51,200 | 1.696 ms | 7,849 | 36.4 MB | 74% |
+| **8K** | 256 | 128 | 51,200 | 200,704 | 8.503 ms | 6,021 | 140 MB | 74.5% |
+| **16K** | 512 | 256 | 200,704 | 794,624 | 34.2 ms | 5,868 | 548 MB | **75%** |
 
-**Task 数量公式：** `Tasks = 16N + 3N²` (N = seq_len / tile_rows)
+**自适应 Tile 优化 (64-row tiles)：**
+- **无优化公式**: `Tasks = 16N + 3N²` (N = seq_len / 32)
+- **有优化公式**: `Tasks = 7N + 3N²/4` (迭代次数减半)
+- **节省**: N² → (N/2)² = N²/4 → **75% 任务数缩减**
 
-- Phase 1 (Pre-Attention): 6N tasks (并行)
-- Phase 2 (Flash Attention): N(2 + 3N) tasks (交叉依赖)
-- Phase 3 (Post-Attention/FFN): 8N tasks (并行)
+**128K 序列长度推断：**
+
+| 指标 | 16K | 128K (推断) | 比例 |
+|------|-----|-------------|------|
+| Tiles | 512 | 4,096 | 8x |
+| Tasks | 200,704 | 12,611,584 | 63x |
+| Build Time | 34 ms | ~2.1 秒 | 61x |
+| Memory | 548 MB | ~33.6 GB | 63x |
+
+**SRAM 限制 Tile 大小：**
+- 64-row Flash Attn: Q(32KB) + K(32KB) + V(32KB) + S(16KB) + O(32KB) = **144 KB** < 256 KB ✓
+- 128-row: S = 128×128 = 64KB → Total = **321 KB** > 256 KB ✗
+- Score 矩阵 S = tile_rows² 是瓶颈！
 
 **数据结构大小：**
 - `sizeof(PendingTask)` = 2,864 bytes
 - `sizeof(TensorMapEntry)` = 56 bytes
-- 每任务平均内存 ≈ 2,870 bytes
-- `PTO_MAX_TASKS` = 65,536 (可容纳 seq_len ≤ 4K)
+- `PTO_MAX_TASKS` = 262,144 (可容纳 seq_len ≤ 16K)
 
 ---
 
