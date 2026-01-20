@@ -104,36 +104,3 @@ void dynamic_softmax(PTORuntime* rt, float* input, float* output, float* temp_ro
     }
 
 }
-
-/**
- * Main: Build task graph and dump to file
- */
-int main(int argc, char** argv) {
-    // Allocate runtime on heap (PTORuntime is ~187MB with 65536 max tasks)
-    PTORuntime* rt = (PTORuntime*)malloc(sizeof(PTORuntime));
-    if (!rt) { fprintf(stderr, "Failed to allocate PTORuntime\n"); return 1; }
-    pto_runtime_init(rt);
-
-    // Declare dummy buffers
-    float input[1024];  // Dummy buffer
-    float output[1024];  // Dummy buffer
-    float temp_rowmax[1024];  // Dummy buffer
-    float temp_shifted[1024];  // Dummy buffer
-    float temp_exp[1024];  // Dummy buffer
-    float temp_rowsum[1024];  // Dummy buffer
-
-    int total_rows = 1;  // TODO: set from args
-    int num_full_tiles = 8;  // TODO: set from args
-    int tail_rows = 0;  // TODO: set from args
-
-    // Build task graph
-    dynamic_softmax(rt, input, output, temp_rowmax, temp_shifted, temp_exp, temp_rowsum, total_rows, num_full_tiles, tail_rows);
-
-    printf("\n");
-    pto_runtime_dump_stdout(rt);
-    pto_runtime_dump(rt, "dynamic_softmax_task_graph.txt");
-
-    pto_runtime_shutdown(rt);
-    free(rt);
-    return 0;
-}

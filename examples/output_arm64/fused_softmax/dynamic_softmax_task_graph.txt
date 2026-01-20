@@ -4,11 +4,11 @@ PTO RUNTIME DUMP
 
 SUMMARY
 --------------------------------------------------------------------------------
-  Total tasks scheduled:  10
+  Total tasks scheduled:  40
   Total tasks completed:  0
-  Active task count:      10
-  Next task ID:           10
-  Ready queue size:       2
+  Active task count:      40
+  Next task ID:           40
+  Ready queue size:       16
 
 ================================================================================
 TASK TABLE (pend_task)
@@ -22,27 +22,31 @@ TASK 0
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
     fanin = 0
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
-    fanout_count = 1
-    fanout[] = [1]
-    Consumers:
-      -> Task 1 (rowexpandsub)
+    fanout_count = 0
+    fanout[] = [] (no consumers)
 
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80ebd8
+        tensor:     0x16bcd1ee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80eab8
+        tensor:     0x16bccfee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -56,9 +60,15 @@ TASK 1
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
-    fanin = 1
+    fanin = 0
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
@@ -70,19 +80,19 @@ TASK 1
   ARGUMENTS (num_args = 3)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80ebd8
+        tensor:     0x16bcd1ee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] INPUT:
-        tensor:     0x16b80eab8
+        tensor:     0x16bccfee8
         row_offset: 0
         col_offset: 0
         rows:       8
-        cols:       1
+        cols:       8
     [2] OUTPUT:
-        tensor:     0x16b80e9b8
+        tensor:     0x16bcceee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -95,6 +105,12 @@ TASK 2
   Func Ptr:     0x0
   Is Active:    true
   Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
 
   FANIN COUNTER
   -------------
@@ -111,13 +127,13 @@ TASK 2
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e9b8
+        tensor:     0x16bcceee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -131,27 +147,31 @@ TASK 3
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
     fanin = 1
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
-    fanout_count = 1
-    fanout[] = [4]
-    Consumers:
-      -> Task 4 (rowexpanddiv)
+    fanout_count = 0
+    fanout[] = [] (no consumers)
 
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80e898
+        tensor:     0x16bcccee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -165,9 +185,15 @@ TASK 4
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
-    fanin = 2
+    fanin = 1
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
@@ -177,19 +203,19 @@ TASK 4
   ARGUMENTS (num_args = 3)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] INPUT:
-        tensor:     0x16b80e898
+        tensor:     0x16bcccee8
         row_offset: 0
         col_offset: 0
         rows:       8
-        cols:       1
+        cols:       8
     [2] OUTPUT:
-        tensor:     0x16b80ead8
+        tensor:     0x16bcd0ee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -203,27 +229,31 @@ TASK 5
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
     fanin = 0
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
-    fanout_count = 1
-    fanout[] = [6]
-    Consumers:
-      -> Task 6 (rowexpandsub)
+    fanout_count = 0
+    fanout[] = [] (no consumers)
 
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80ebd8
+        tensor:     0x16bcd1ee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80eab8
+        tensor:     0x16bccfee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -237,9 +267,15 @@ TASK 6
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
-    fanin = 1
+    fanin = 0
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
@@ -251,19 +287,19 @@ TASK 6
   ARGUMENTS (num_args = 3)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80ebd8
+        tensor:     0x16bcd1ee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] INPUT:
-        tensor:     0x16b80eab8
+        tensor:     0x16bccfee8
         row_offset: 0
         col_offset: 0
         rows:       8
-        cols:       1
+        cols:       8
     [2] OUTPUT:
-        tensor:     0x16b80e9b8
+        tensor:     0x16bcceee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -276,6 +312,12 @@ TASK 7
   Func Ptr:     0x0
   Is Active:    true
   Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
 
   FANIN COUNTER
   -------------
@@ -292,13 +334,13 @@ TASK 7
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e9b8
+        tensor:     0x16bcceee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -312,27 +354,31 @@ TASK 8
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
     fanin = 1
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
-    fanout_count = 1
-    fanout[] = [9]
-    Consumers:
-      -> Task 9 (rowexpanddiv)
+    fanout_count = 0
+    fanout[] = [] (no consumers)
 
   ARGUMENTS (num_args = 2)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] OUTPUT:
-        tensor:     0x16b80e898
+        tensor:     0x16bcccee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -346,9 +392,15 @@ TASK 9
   Is Active:    true
   Is Complete:  false
 
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
   FANIN COUNTER
   -------------
-    fanin = 2
+    fanin = 1
 
   FANOUT LIST (consumers that depend on this task)
   ------------------------------------------------
@@ -358,19 +410,1261 @@ TASK 9
   ARGUMENTS (num_args = 3)
   -------------------------
     [0] INPUT:
-        tensor:     0x16b80e8b8
+        tensor:     0x16bccdee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       8
     [1] INPUT:
-        tensor:     0x16b80e898
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 10
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
         row_offset: 0
         col_offset: 0
         rows:       8
         cols:       1
+
+--------------------------------------------------------------------------------
+TASK 11
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [12]
+    Consumers:
+      -> Task 12 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
     [2] OUTPUT:
-        tensor:     0x16b80ead8
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 12
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [13, 14]
+    Consumers:
+      -> Task 13 (rowsum)
+      -> Task 14 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 13
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 14
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 15
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 16
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [17]
+    Consumers:
+      -> Task 17 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 17
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [18, 19]
+    Consumers:
+      -> Task 18 (rowsum)
+      -> Task 19 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 18
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 19
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 20
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 21
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [22]
+    Consumers:
+      -> Task 22 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 22
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [23, 24]
+    Consumers:
+      -> Task 23 (rowsum)
+      -> Task 24 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 23
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 24
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 25
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 26
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [27]
+    Consumers:
+      -> Task 27 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 27
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [28, 29]
+    Consumers:
+      -> Task 28 (rowsum)
+      -> Task 29 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 28
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 29
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 30
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 31
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [32]
+    Consumers:
+      -> Task 32 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 32
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [33, 34]
+    Consumers:
+      -> Task 33 (rowsum)
+      -> Task 34 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 33
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 34
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 35
+--------------------------------------------------------------------------------
+  Function:     rowmax
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 36
+--------------------------------------------------------------------------------
+  Function:     rowexpandsub
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 1
+    fanout[] = [37]
+    Consumers:
+      -> Task 37 (elem_exp)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcd1ee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bccfee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 37
+--------------------------------------------------------------------------------
+  Function:     elem_exp
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 524288 bytes (512.00 KB)
+    with_reuse    = 524288 bytes (512.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 2
+    fanout[] = [38, 39]
+    Consumers:
+      -> Task 38 (rowsum)
+      -> Task 39 (rowexpanddiv)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bcceee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+
+--------------------------------------------------------------------------------
+TASK 38
+--------------------------------------------------------------------------------
+  Function:     rowsum
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 294912 bytes (288.00 KB)
+    with_reuse    = 294912 bytes (288.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 2)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] OUTPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       1
+
+--------------------------------------------------------------------------------
+TASK 39
+--------------------------------------------------------------------------------
+  Function:     rowexpanddiv
+  Func Ptr:     0x0
+  Is Active:    true
+  Is Complete:  false
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 557056 bytes (544.00 KB)
+    with_reuse    = 557056 bytes (544.00 KB)
+    savings       = 0 bytes (0.0%)
+
+  FANIN COUNTER
+  -------------
+    fanin = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_count = 0
+    fanout[] = [] (no consumers)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0x16bccdee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [1] INPUT:
+        tensor:     0x16bcccee8
+        row_offset: 0
+        col_offset: 0
+        rows:       8
+        cols:       8
+    [2] OUTPUT:
+        tensor:     0x16bcd0ee8
         row_offset: 0
         col_offset: 0
         rows:       8
@@ -381,19 +1675,19 @@ READY QUEUE
 ================================================================================
 
   Head:  0
-  Tail:  2
-  Count: 2
-  Queue: [0, 5]
+  Tail:  16
+  Count: 16
+  Queue: [0, 1, 5, 6, 10, 11, 15, 16, 20, 21, 25, 26, 30, 31, 35, 36]
 
 ================================================================================
 TENSOR MAP (non-empty buckets)
 ================================================================================
 
-  [bucket 2281] tensor=0x16b80e8b8, offset=[0,0], shape=[8,8] -> producer: Task 7
-  [bucket 2294] tensor=0x16b80e898, offset=[0,0], shape=[8,1] -> producer: Task 8
-  [bucket 2537] tensor=0x16b80e9b8, offset=[0,0], shape=[8,8] -> producer: Task 6
-  [bucket 2697] tensor=0x16b80ead8, offset=[0,0], shape=[8,8] -> producer: Task 9
-  [bucket 2774] tensor=0x16b80eab8, offset=[0,0], shape=[8,1] -> producer: Task 5
+  [bucket 3718] tensor=0x16bcccee8, offset=[0,0], shape=[8,1] -> producer: Task 38
+  [bucket 3769] tensor=0x16bcd0ee8, offset=[0,0], shape=[8,8] -> producer: Task 39
+  [bucket 7865] tensor=0x16bccdee8, offset=[0,0], shape=[8,8] -> producer: Task 37
+  [bucket 11961] tensor=0x16bcceee8, offset=[0,0], shape=[8,8] -> producer: Task 36
+  [bucket 16006] tensor=0x16bccfee8, offset=[0,0], shape=[8,1] -> producer: Task 35
 
   Total tensor entries: 5
 
@@ -402,25 +1696,69 @@ DEPENDENCY GRAPH (Producer -> Consumer)
 ================================================================================
 
   Task 0 (rowmax) [READY]
-    └──> Task 1 (rowexpandsub)
-  Task 1 (rowexpandsub) [WAIT]
+  Task 1 (rowexpandsub) [READY]
     └──> Task 2 (elem_exp)
   Task 2 (elem_exp) [WAIT]
     └──> Task 3 (rowsum)
     └──> Task 4 (rowexpanddiv)
   Task 3 (rowsum) [WAIT]
-    └──> Task 4 (rowexpanddiv)
   Task 4 (rowexpanddiv) [WAIT]
   Task 5 (rowmax) [READY]
-    └──> Task 6 (rowexpandsub)
-  Task 6 (rowexpandsub) [WAIT]
+  Task 6 (rowexpandsub) [READY]
     └──> Task 7 (elem_exp)
   Task 7 (elem_exp) [WAIT]
     └──> Task 8 (rowsum)
     └──> Task 9 (rowexpanddiv)
   Task 8 (rowsum) [WAIT]
-    └──> Task 9 (rowexpanddiv)
   Task 9 (rowexpanddiv) [WAIT]
+  Task 10 (rowmax) [READY]
+  Task 11 (rowexpandsub) [READY]
+    └──> Task 12 (elem_exp)
+  Task 12 (elem_exp) [WAIT]
+    └──> Task 13 (rowsum)
+    └──> Task 14 (rowexpanddiv)
+  Task 13 (rowsum) [WAIT]
+  Task 14 (rowexpanddiv) [WAIT]
+  Task 15 (rowmax) [READY]
+  Task 16 (rowexpandsub) [READY]
+    └──> Task 17 (elem_exp)
+  Task 17 (elem_exp) [WAIT]
+    └──> Task 18 (rowsum)
+    └──> Task 19 (rowexpanddiv)
+  Task 18 (rowsum) [WAIT]
+  Task 19 (rowexpanddiv) [WAIT]
+  Task 20 (rowmax) [READY]
+  Task 21 (rowexpandsub) [READY]
+    └──> Task 22 (elem_exp)
+  Task 22 (elem_exp) [WAIT]
+    └──> Task 23 (rowsum)
+    └──> Task 24 (rowexpanddiv)
+  Task 23 (rowsum) [WAIT]
+  Task 24 (rowexpanddiv) [WAIT]
+  Task 25 (rowmax) [READY]
+  Task 26 (rowexpandsub) [READY]
+    └──> Task 27 (elem_exp)
+  Task 27 (elem_exp) [WAIT]
+    └──> Task 28 (rowsum)
+    └──> Task 29 (rowexpanddiv)
+  Task 28 (rowsum) [WAIT]
+  Task 29 (rowexpanddiv) [WAIT]
+  Task 30 (rowmax) [READY]
+  Task 31 (rowexpandsub) [READY]
+    └──> Task 32 (elem_exp)
+  Task 32 (elem_exp) [WAIT]
+    └──> Task 33 (rowsum)
+    └──> Task 34 (rowexpanddiv)
+  Task 33 (rowsum) [WAIT]
+  Task 34 (rowexpanddiv) [WAIT]
+  Task 35 (rowmax) [READY]
+  Task 36 (rowexpandsub) [READY]
+    └──> Task 37 (elem_exp)
+  Task 37 (elem_exp) [WAIT]
+    └──> Task 38 (rowsum)
+    └──> Task 39 (rowexpanddiv)
+  Task 38 (rowsum) [WAIT]
+  Task 39 (rowexpanddiv) [WAIT]
 
 ================================================================================
 END OF DUMP

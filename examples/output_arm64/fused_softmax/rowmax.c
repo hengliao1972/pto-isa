@@ -1,10 +1,29 @@
 // PTO Program: rowmax
 // Function Type: InCore (tile-level computation)
+// ======================================================================
+// TILE BUFFER ANALYSIS: rowmax
+// ======================================================================
+//
+// SUMMARY:
+//   Total tiles declared:     2
+//   Total capacity (no reuse): 288 bytes (0.3 KB)
+//   Total capacity (w/ reuse): 288 bytes (0.3 KB)
+//   Reuse savings:            0 bytes (0.0%)
+//
+// TILE DETAILS:
+//   Name                 Shape      Type   Bytes    Liveness [write,read]   Reuse
+//   --------------------------------------------------------------------------------
+//   result               8x1        f32        32   [  1,   2]           -
+//   x                    8x8        f32       256   [  0,   1]           -
+//
+// ======================================================================
+
 // Auto-generated ARM64 NEON code from PTO ISA Compiler
 #include <arm_neon.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void rowmax(float* input, float* output) {
     float x[8][8];

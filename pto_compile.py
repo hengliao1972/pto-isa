@@ -2598,9 +2598,9 @@ def convert_program_to_mock_instructions(program):
             # CALL instruction: callee name in 'callee', args in 'args' dict
             args_list = []
             if hasattr(instr, 'args') and instr.args:
-                # Format: param -> arg mappings
+                # Format: "param_name -> arg_value" to preserve parameter info
                 for param, arg in instr.args.items():
-                    args_list.append(arg)
+                    args_list.append(f"{param} -> {arg}")
             mock_instructions.append(MockInstruction(
                 opcode="CALL", dst=instr.callee,
                 operands=args_list
@@ -2614,8 +2614,48 @@ def convert_program_to_mock_instructions(program):
     return tile_info, mock_instructions
 
 
-def _gen_arm64_barrier_op(instr, rows, cols, dtype, tile_info):
-    """Generate ARM64 code for barrier operations (non-fusable)."""
+@dataclass
+class OrchestrationContext:
+    """
+    Context for generating orchestration function code.
+    
+    Tracks state needed for task graph building code generation:
+    - Task counter for unique IDs
+    - Tensor to producer task mapping for dependency tracking
+    - Module reference for InCore function metadata
+    """
+    module: Optional['PTOModule'] = None
+    task_counter: int = 0
+    tensor_producers: Dict[str, int] = field(default_factory=dict)
+    
+    def alloc_task(self) -> int:
+        """Allocate a new task ID."""
+        task_id = self.task_counter
+        self.task_counter += 1
+        return task_id
+    
+    def set_producer(self, tensor_name: str, task_id: int):
+        """Record that a tensor is produced by a task."""
+        self.tensor_producers[tensor_name] = task_id
+    
+    def get_buffer_sizes(self, func_name: str) -> Tuple[float, float]:
+        """Get buffer sizes for an InCore function."""
+        if self.module:
+            return self.module.get_buffer_size(func_name)
+        return (0.0, 0.0)
+
+
+def _gen_arm64_barrier_op(instr, rows, cols, dtype, tile_info, orch_ctx: Optional[OrchestrationContext] = None):
+    """Generate ARM64 code for barrier operations (non-fusable).
+    
+    Args:
+        instr: The instruction to generate code for
+        rows, cols: Tile dimensions
+        dtype: Data type
+        tile_info: Tile metadata
+        orch_ctx: Optional orchestration context. If provided, CALL instructions
+                  generate task scheduling code instead of direct function calls.
+    """
     lines = []
     c_type = ARM64_TYPE_MAP.get(dtype, "float")
     
@@ -2773,17 +2813,108 @@ def _gen_arm64_barrier_op(instr, rows, cols, dtype, tile_info):
     elif instr.opcode == "CALL":
         callee = instr.dst  # Function name is stored in dst
         args = instr.operands  # List of argument mappings
-        if args:
-            args_str = ", ".join(str(arg) for arg in args)
-            lines.append(f"{callee}({args_str});")
+        
+        # For orchestration functions, generate task scheduling code
+        if orch_ctx is not None:
+            lines.extend(_gen_task_scheduling_code(callee, args, orch_ctx, tile_info, rows, cols))
         else:
-            lines.append(f"{callee}();")
+            # For InCore functions, generate direct function call
+            if args:
+                args_str = ", ".join(str(arg) for arg in args)
+                lines.append(f"{callee}({args_str});")
+            else:
+                lines.append(f"{callee}();")
     
     elif instr.opcode == "RETURN":
         lines.append("return;")
         
     else:
         lines.append(f"// {instr.opcode}: Not implemented")
+    
+    return lines
+
+
+def _gen_task_scheduling_code(callee: str, args: List, orch_ctx: OrchestrationContext, 
+                               tile_info: Dict, rows: int, cols: int) -> List[str]:
+    """Generate task scheduling code for an InCore function call.
+    
+    This is called when generating code for an orchestration function that
+    calls an InCore function.
+    
+    Args format from CALL instruction: ["param_name -> arg_value", ...]
+    where param_name is the parameter name in the called function,
+    and arg_value is the actual argument passed.
+    """
+    lines = []
+    task_id = orch_ctx.alloc_task()
+    
+    # Get buffer sizes for this function (in KB, convert to bytes)
+    buf_without_reuse, buf_with_reuse = orch_ctx.get_buffer_sizes(callee)
+    buf_bytes = int(buf_without_reuse * 1024)  # Convert KB to bytes
+    reuse_bytes = int(buf_with_reuse * 1024)
+    
+    lines.append(f"// Task {task_id}: {callee}")
+    lines.append(f"int32_t t{task_id} = pto_task_alloc(rt, \"{callee}\", NULL, {buf_bytes}, {reuse_bytes});")
+    
+    # Parse arguments: determine inputs vs outputs
+    # Args format: ["param_name -> arg_value", ...] (from CALL instruction)
+    input_args = []
+    output_args = []
+    
+    for arg in args:
+        arg_str = str(arg)
+        
+        # Parse "param_name -> arg_value" format (from CALL instruction)
+        if " -> " in arg_str:
+            param_name, value = arg_str.split(" -> ", 1)
+        elif "=" in arg_str:
+            # Alternative format: "param_name=arg_value"
+            param_name, value = arg_str.split("=", 1)
+        else:
+            param_name = arg_str
+            value = arg_str
+        
+        param_name = param_name.strip()
+        value = value.strip()
+        
+        # Determine if output based on parameter name
+        is_output = any(kw in param_name.lower() for kw in ['output', 'result', 'dst', 'out'])
+        
+        # Get shape info - use default tile size if not found
+        t_rows = rows
+        t_cols = cols
+        
+        # Adjust for reduction outputs
+        if callee in ['rowmax', 'rowsum', 'tile_rowmax', 'tile_rowsum'] and is_output:
+            t_cols = 1
+        
+        # Extract row_offset if present in value (e.g., "input, tile_idx, 0")
+        if "," in value:
+            parts = [p.strip() for p in value.split(",")]
+            tensor_name = parts[0]
+            row_off = parts[1] if len(parts) > 1 else "0"
+            col_off = parts[2] if len(parts) > 2 else "0"
+        else:
+            tensor_name = value
+            row_off = "0"
+            col_off = "0"
+        
+        if is_output:
+            output_args.append((tensor_name, row_off, col_off, t_rows, t_cols))
+            orch_ctx.set_producer(tensor_name, task_id)
+        else:
+            input_args.append((tensor_name, row_off, col_off, t_rows, t_cols))
+    
+    # Generate input tracking
+    for tensor, row_off, col_off, t_rows, t_cols in input_args:
+        lines.append(f"pto_task_add_input(rt, t{task_id}, {tensor}, {row_off}, {col_off}, {t_rows}, {t_cols});")
+    
+    # Generate output tracking
+    for tensor, row_off, col_off, t_rows, t_cols in output_args:
+        lines.append(f"pto_task_add_output(rt, t{task_id}, {tensor}, {row_off}, {col_off}, {t_rows}, {t_cols});")
+    
+    lines.append(f"pto_task_submit(rt, t{task_id});")
+    lines.append("")
     
     return lines
 
@@ -3375,6 +3506,11 @@ class MultiBackendCodeGenerator:
         is_in_core = getattr(program, 'is_in_core', True)
         in_core_str = "InCore (tile-level computation)" if is_in_core else "Orchestration (control flow only)"
         
+        # Create orchestration context for non-InCore functions
+        orch_ctx = None
+        if not is_in_core:
+            orch_ctx = OrchestrationContext(module=self.module)
+        
         lines = [
             f"// PTO Program: {program.name}",
             f"// Function Type: {in_core_str}",
@@ -3390,6 +3526,13 @@ class MultiBackendCodeGenerator:
             # Store analysis in module if available
             if self.module is not None:
                 self.module.set_buffer_analysis(program.name, analyzer.analysis_result)
+        
+        # For orchestration functions, add runtime header
+        if not is_in_core:
+            lines.append('// Orchestration function - builds task graph using PTO runtime')
+            lines.append('#include "pto_runtime.h"')
+            lines.append('#include "pto_runtime.c"  // Include for standalone build')
+            lines.append('')
         
         lines.append(arm64_generate_header())
         
@@ -3418,8 +3561,13 @@ class MultiBackendCodeGenerator:
             c_type = ARM64_TYPE_MAP.get(scalar_type.value, "int")
             scalar_params.append(f"{c_type} {name}")
         
+        # For orchestration functions, add PTORuntime* as first parameter
+        if not is_in_core:
+            all_params = ["PTORuntime* rt"] + memref_params + scalar_params
+        else:
+            all_params = memref_params + scalar_params
+        
         # Generate function signature
-        all_params = memref_params + scalar_params
         if all_params:
             func_params = ", ".join(all_params)
             lines.append(f"void {program.name}({func_params}) {{")
@@ -3464,8 +3612,8 @@ class MultiBackendCodeGenerator:
                         # ELSE: decrease then increase
                         indent = "    " * max(1, indent_level - 1)
                     
-                    # Generate the barrier code
-                    barrier_lines = _gen_arm64_barrier_op(instr, rows, cols, dtype, tile_info)
+                    # Generate the barrier code (pass orch_ctx for orchestration functions)
+                    barrier_lines = _gen_arm64_barrier_op(instr, rows, cols, dtype, tile_info, orch_ctx)
                     for barrier_line in barrier_lines:
                         lines.append(f"{indent}{barrier_line}" if barrier_line else "")
                     
@@ -3791,6 +3939,161 @@ class MultiBackendCodeGenerator:
         print(f"  [PTO-AS] -> {pto_file}")
         
         return results
+    
+    def generate_orchestration_executable(self, program, output_dir: str) -> str:
+        """
+        Generate a standalone executable for an orchestration function.
+        
+        The executable builds the task graph and dumps it to a file.
+        
+        Args:
+            program: Orchestration PTOProgram
+            output_dir: Directory for output files
+            
+        Returns:
+            Generated C code as string
+        """
+        if getattr(program, 'is_in_core', True):
+            return "// Error: Not an orchestration function"
+        
+        # Generate the orchestration function
+        func_code = self.generate_arm64(program)
+        
+        # Generate main() wrapper
+        lines = [func_code]
+        lines.append("")
+        lines.append("/**")
+        lines.append(" * Main: Build task graph and dump to file")
+        lines.append(" */")
+        lines.append("int main(int argc, char** argv) {")
+        lines.append("    // Allocate runtime on heap (PTORuntime is ~187MB with 65536 max tasks)")
+        lines.append("    PTORuntime* rt = (PTORuntime*)malloc(sizeof(PTORuntime));")
+        lines.append("    if (!rt) { fprintf(stderr, \"Failed to allocate PTORuntime\\n\"); return 1; }")
+        lines.append("    pto_runtime_init(rt);")
+        lines.append("")
+        
+        # Declare buffers for all memrefs
+        lines.append("    // Declare dummy buffers")
+        for name in program.memref_declarations.keys():
+            lines.append(f"    float {name}[1024];  // Dummy buffer")
+        lines.append("")
+        
+        # Determine scalar parameters (excluding SLI-initialized)
+        tile_info, mock_instructions = convert_program_to_mock_instructions(program)
+        sli_initialized = set()
+        for instr in mock_instructions:
+            if instr.opcode == "SLI":
+                sli_initialized.add(instr.dst)
+        
+        scalar_args = []
+        for name, scalar_type in program.scalar_declarations.items():
+            if scalar_type in (ElementType.U1, ElementType.INDEX):
+                continue
+            if name in sli_initialized:
+                continue
+            # Default value for scalars
+            default_val = "32" if "tile" in name.lower() or "num" in name.lower() else "1"
+            lines.append(f"    int {name} = {default_val};  // TODO: set from args")
+            scalar_args.append(name)
+        lines.append("")
+        
+        # Call the orchestration function
+        args = ["rt"] + list(program.memref_declarations.keys()) + scalar_args
+        args_str = ", ".join(args)
+        lines.append(f"    // Build task graph")
+        lines.append(f"    {program.name}({args_str});")
+        lines.append("")
+        
+        # Dump results
+        lines.append('    printf("\\n");')
+        lines.append("    pto_runtime_dump_stdout(rt);")
+        lines.append(f'    pto_runtime_dump(rt, "{program.name}_task_graph.txt");')
+        lines.append("")
+        lines.append("    pto_runtime_shutdown(rt);")
+        lines.append("    free(rt);")
+        lines.append("    return 0;")
+        lines.append("}")
+        
+        return "\n".join(lines)
+    
+    def compile_and_run_orchestration(self, program, output_dir: str, 
+                                       extra_args: Dict[str, int] = None) -> Optional[str]:
+        """
+        Generate, compile, execute, and return the task graph dump path.
+        
+        Args:
+            program: Orchestration PTOProgram
+            output_dir: Directory for output files
+            extra_args: Optional dict of scalar name -> value to pass to the function
+            
+        Returns:
+            Path to the generated dump file, or None on failure
+        """
+        import subprocess
+        
+        if getattr(program, 'is_in_core', True):
+            print(f"  [Error] {program.name} is not an orchestration function")
+            return None
+        
+        os.makedirs(output_dir, exist_ok=True)
+        runtime_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Generate standalone C code
+        c_code = self.generate_orchestration_executable(program, output_dir)
+        
+        # If extra_args provided, patch the default values
+        if extra_args:
+            for name, value in extra_args.items():
+                old_pattern = f"int {name} = \\d+;"
+                new_value = f"int {name} = {value};"
+                c_code = re.sub(old_pattern, new_value, c_code)
+        
+        # Write C file
+        c_file = os.path.join(output_dir, f"{program.name}_orchestration.c")
+        with open(c_file, 'w') as f:
+            f.write(c_code)
+        print(f"  [Orchestration] Generated: {c_file}")
+        
+        # Compile
+        exe_file = os.path.join(output_dir, f"{program.name}_orchestration")
+        compile_cmd = ["gcc", "-O2", "-I", runtime_dir, "-o", exe_file, c_file]
+        
+        print(f"  [Orchestration] Compiling...")
+        result = subprocess.run(compile_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  [Orchestration] Compilation failed: {result.stderr}")
+            return None
+        
+        # Execute
+        print(f"  [Orchestration] Executing...")
+        result = subprocess.run([exe_file], capture_output=True, text=True, cwd=output_dir)
+        
+        if result.returncode != 0:
+            print(f"  [Orchestration] Execution failed: {result.stderr}")
+            return None
+        
+        # Print output (limited)
+        if result.stdout:
+            output_lines = result.stdout.split('\n')
+            if len(output_lines) > 50:
+                print('\n'.join(output_lines[:30]))
+                print(f"... ({len(output_lines) - 50} lines omitted) ...")
+                print('\n'.join(output_lines[-20:]))
+            else:
+                print(result.stdout)
+        
+        # Check dump file
+        dump_file = os.path.join(output_dir, f"{program.name}_task_graph.txt")
+        if os.path.exists(dump_file):
+            print(f"  [Orchestration] Task graph dump: {dump_file}")
+            # Clean up executable
+            try:
+                os.remove(exe_file)
+            except:
+                pass
+            return dump_file
+        
+        return None
 
 
 # Convenience functions for backward compatibility

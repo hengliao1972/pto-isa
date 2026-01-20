@@ -22,10 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pto_compile import (
     PTOFunctionBuilder, PTOModule, PTOModuleCompiler,
-    MultiBackendCodeGenerator, generate_all_backends,
-    OrchestrationCodeGenerator
+    MultiBackendCodeGenerator, generate_all_backends
 )
-from pto_isa_definition import ElementType, MemorySpace
+from pto_isa_definition import ElementType, MemorySpace, CompareMode
 
 # Default configuration
 DEFAULT_DTYPE = ElementType.F32
@@ -304,40 +303,45 @@ def main():
     print(f"\n  [PTO] -> {pto_file}")
     
     # ==========================================================================
-    # Step 2: Generate ARM64 code for InCore functions
+    # Step 2: Generate code for all functions using MultiBackendCodeGenerator
     # ==========================================================================
     print("\n" + "=" * 70)
-    print("Step 2: Generate ARM64 Code for InCore Functions")
+    print("Step 2: Generate Code for All Functions")
     print("=" * 70)
     
     arm64_dir = os.path.join(output_base, "output_arm64", "fused_softmax")
     os.makedirs(arm64_dir, exist_ok=True)
     
-    gen = MultiBackendCodeGenerator(enable_fusion=True)
+    # Create generator with module reference (for buffer analysis tracking)
+    gen = MultiBackendCodeGenerator(enable_fusion=True, analyze_buffers=True, module=module)
     
-    # Generate code for each InCore function
+    # Generate code for all functions
+    # InCore functions: generate actual computation code
+    # Orchestration functions: generate task graph building code
     for func_name in module.get_function_names():
         func = module.get_function(func_name)
-        if func.is_in_core:
-            arm64_code = gen.generate_arm64(func)
-            func_file = os.path.join(arm64_dir, f"{func_name}.c")
-            with open(func_file, "w") as f:
-                f.write(arm64_code)
-            print(f"  [ARM64] {func_name} -> {func_file}")
+        arm64_code = gen.generate_arm64(func)
+        func_file = os.path.join(arm64_dir, f"{func_name}.c")
+        with open(func_file, "w") as f:
+            f.write(arm64_code)
+        func_type = "InCore" if func.is_in_core else "Orchestration"
+        print(f"  [ARM64] {func_name} ({func_type}) -> {func_file}")
     
     # ==========================================================================
-    # Step 3: Generate Orchestration Code and Build Task Graph
+    # Step 3: Compile and Run Orchestration to Build Task Graph
     # ==========================================================================
     print("\n" + "=" * 70)
-    print("Step 3: Generate Orchestration Code and Build Task Graph")
+    print("Step 3: Compile and Run Orchestration to Build Task Graph")
     print("=" * 70)
     
-    # Use OrchestrationCodeGenerator to:
-    # 1. Generate C code that builds task graph
-    # 2. Compile it
-    # 3. Execute to produce task dump
-    orch_gen = OrchestrationCodeGenerator(module)
-    dump_file = orch_gen.compile_and_run(module.entry_function, arm64_dir)
+    # Use the new integrated API in MultiBackendCodeGenerator
+    # This automatically generates the task graph building code
+    orch_func = module.get_function(module.entry_function)
+    dump_file = gen.compile_and_run_orchestration(
+        orch_func, 
+        arm64_dir,
+        extra_args={"num_full_tiles": 8, "tail_rows": 0}  # Example args
+    )
     
     if dump_file:
         print(f"\n  Task graph dump: {dump_file}")

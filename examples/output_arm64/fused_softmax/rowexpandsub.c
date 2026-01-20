@@ -1,10 +1,30 @@
 // PTO Program: rowexpandsub
 // Function Type: InCore (tile-level computation)
+// ======================================================================
+// TILE BUFFER ANALYSIS: rowexpandsub
+// ======================================================================
+//
+// SUMMARY:
+//   Total tiles declared:     3
+//   Total capacity (no reuse): 544 bytes (0.5 KB)
+//   Total capacity (w/ reuse): 544 bytes (0.5 KB)
+//   Reuse savings:            0 bytes (0.0%)
+//
+// TILE DETAILS:
+//   Name                 Shape      Type   Bytes    Liveness [write,read]   Reuse
+//   --------------------------------------------------------------------------------
+//   result               8x8        f32       256   [  2,   3]           -
+//   row_vals             8x1        f32        32   [  1,   2]           -
+//   x                    8x8        f32       256   [  0,   2]           -
+//
+// ======================================================================
+
 // Auto-generated ARM64 NEON code from PTO ISA Compiler
 #include <arm_neon.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void rowexpandsub(float* input_x, float* input_row, float* output) {
     float x[8][8];

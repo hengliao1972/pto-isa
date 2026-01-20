@@ -140,6 +140,7 @@ def arm64_generate_header() -> str:
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 """
 
 
