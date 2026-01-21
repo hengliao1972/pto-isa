@@ -4216,16 +4216,34 @@ class MultiBackendCodeGenerator:
         return "\n".join(lines)
     
     def generate_ascend(self, program) -> str:
-        """Generate Huawei Ascend 910B (Ascend C) code from a PTO program."""
+        """
+        Generate Huawei Ascend 910B (Ascend C) code from a PTO program.
+        
+        IMPORTANT: InCore functions are generated as SINGLE-CORE (SPSD) functions,
+        NOT as SPMD kernels. They are designed to be:
+        - Scheduled as tasks by the Orchestration layer via PTO Runtime
+        - Executed on a single AI Core at a time
+        - Inlined at compile time when called from other InCore functions
+        
+        The generated code does NOT use:
+        - __global__ attribute (which creates SPMD kernel entry points)
+        - GetBlockIdx() or other multi-core primitives
+        
+        Architecture:
+        - InCore: Pure single-core device function (inline, no kernel entry)
+        - Orchestration: Host code that schedules InCore tasks via PTO Runtime
+        """
         tile_info, mock_instructions = convert_program_to_mock_instructions(program)
         
         # Determine InCore status
         is_in_core = getattr(program, 'is_in_core', True)
-        in_core_str = "InCore (tile-level computation)" if is_in_core else "Orchestration (control flow only)"
+        in_core_str = "InCore (single-core tile computation)" if is_in_core else "Orchestration (control flow only)"
         
         lines = [
             f"// PTO Program: {program.name}",
             f"// Function Type: {in_core_str}",
+            f"// Execution Mode: Single-Core (SPSD) - NOT SPMD kernel",
+            f"// This function is scheduled as a task by PTO Runtime",
         ]
         
         # Add buffer analysis for InCore functions
@@ -4241,27 +4259,57 @@ class MultiBackendCodeGenerator:
         
         lines.append(ascend_generate_header())
         
-        lines.append(f"class {program.name}Kernel {{")
+        # Generate tile/memref declarations from program
+        tile_decls = getattr(program, 'tile_declarations', {})
+        memref_decls = getattr(program, 'memref_declarations', {})
+        
+        # Calculate buffer sizes from tile declarations
+        total_buffer_size = 0
+        for tile_name, tile_type in tile_decls.items():
+            tile_size = tile_type.shape.rows * tile_type.shape.cols * 4  # Assume float32
+            total_buffer_size += tile_size
+        
+        # Default buffer size if no tiles declared
+        if total_buffer_size == 0:
+            total_buffer_size = 8 * 8 * 4  # 64 floats
+        
+        # Generate InCore function as a callable single-core function
+        # NOT a kernel entry point - no __global__ attribute
+        lines.append(f"/**")
+        lines.append(f" * InCore Function: {program.name}")
+        lines.append(f" * Single-core tile computation function.")
+        lines.append(f" * Called by PTO Runtime as a scheduled task.")
+        lines.append(f" * NOT a kernel entry - use {program.name}_kernel_wrapper() to launch as kernel.")
+        lines.append(f" */")
+        lines.append(f"class {program.name}InCore {{")
         lines.append("public:")
-        lines.append(f"    __aicore__ inline {program.name}Kernel() {{}}")
+        lines.append(f"    // Single-core constructor - no block coordination")
+        lines.append(f"    __aicore__ inline {program.name}InCore() {{}}")
+        lines.append("")
+        lines.append("    // Initialize with global memory pointers")
         lines.append("    __aicore__ inline void Init(GM_ADDR input, GM_ADDR output) {")
         lines.append("        inputGm.SetGlobalBuffer((__gm__ float*)input);")
         lines.append("        outputGm.SetGlobalBuffer((__gm__ float*)output);")
-        lines.append("        pipe.InitBuffer(inQueueX, 1, 8 * 8 * sizeof(float));")
-        lines.append("        pipe.InitBuffer(outQueueY, 1, 8 * 8 * sizeof(float));")
-        lines.append("    }\n")
+        lines.append(f"        pipe.InitBuffer(inQueueX, 1, {total_buffer_size});")
+        lines.append(f"        pipe.InitBuffer(outQueueY, 1, {total_buffer_size});")
+        lines.append("    }")
+        lines.append("")
+        lines.append("    // Main processing - single tile, single core")
         lines.append("    __aicore__ inline void Process() {")
         lines.append("        CopyIn(); Compute(); CopyOut();")
-        lines.append("    }\n")
+        lines.append("    }")
+        lines.append("")
         lines.append("private:")
         lines.append("    __aicore__ inline void CopyIn() {")
         lines.append("        LocalTensor<float> xLocal = inQueueX.AllocTensor<float>();")
-        lines.append("        DataCopy(xLocal, inputGm, 64);")
+        lines.append(f"        DataCopy(xLocal, inputGm, {total_buffer_size // 4});")
         lines.append("        inQueueX.EnQue(xLocal);")
-        lines.append("    }\n")
+        lines.append("    }")
+        lines.append("")
         lines.append("    __aicore__ inline void Compute() {")
         lines.append("        LocalTensor<float> xLocal = inQueueX.DeQue<float>();")
-        lines.append("        LocalTensor<float> yLocal = outQueueY.AllocTensor<float>();\n")
+        lines.append("        LocalTensor<float> yLocal = outQueueY.AllocTensor<float>();")
+        lines.append("")
         
         if self.enable_fusion:
             optimizer = LoopFusionOptimizer(tile_info)
@@ -4306,25 +4354,60 @@ class MultiBackendCodeGenerator:
         
         lines.append("        outQueueY.EnQue(yLocal);")
         lines.append("        inQueueX.FreeTensor(xLocal);")
-        lines.append("    }\n")
+        lines.append("    }")
+        lines.append("")
         lines.append("    __aicore__ inline void CopyOut() {")
         lines.append("        LocalTensor<float> yLocal = outQueueY.DeQue<float>();")
-        lines.append("        DataCopy(outputGm, yLocal, 64);")
+        lines.append(f"        DataCopy(outputGm, yLocal, {total_buffer_size // 4});")
         lines.append("        outQueueY.FreeTensor(yLocal);")
-        lines.append("    }\n")
+        lines.append("    }")
+        lines.append("")
         lines.append("private:")
         lines.append("    TPipe pipe;")
         lines.append("    TQue<QuePosition::VECIN, 1> inQueueX;")
         lines.append("    TQue<QuePosition::VECOUT, 1> outQueueY;")
         lines.append("    GlobalTensor<float> inputGm;")
         lines.append("    GlobalTensor<float> outputGm;")
-        lines.append("};\n")
+        lines.append("};")
+        lines.append("")
         
+        # Generate callable function for PTO Runtime to invoke
+        # This is NOT a kernel - it's a device function called from the task scheduler
+        lines.append("/**")
+        lines.append(f" * Callable InCore function for PTO Runtime task scheduling.")
+        lines.append(f" * This function is invoked by the runtime when this task is dispatched.")
+        lines.append(f" * Execution: Single AI Core, single tile at specified offset.")
+        lines.append(" */")
+        lines.append(f"__aicore__ inline void {program.name}(")
+        lines.append(f"    GM_ADDR input, int32_t in_row_off, int32_t in_col_off,")
+        lines.append(f"    GM_ADDR output, int32_t out_row_off, int32_t out_col_off,")
+        lines.append(f"    int32_t tile_rows, int32_t tile_cols)")
+        lines.append("{")
+        lines.append(f"    // Calculate byte offsets for this tile")
+        lines.append(f"    int32_t in_offset = (in_row_off * tile_cols + in_col_off) * sizeof(float);")
+        lines.append(f"    int32_t out_offset = (out_row_off * tile_cols + out_col_off) * sizeof(float);")
+        lines.append(f"    ")
+        lines.append(f"    {program.name}InCore op;")
+        lines.append(f"    op.Init((GM_ADDR)((uint8_t*)input + in_offset), ")
+        lines.append(f"            (GM_ADDR)((uint8_t*)output + out_offset));")
+        lines.append(f"    op.Process();")
+        lines.append("}")
+        lines.append("")
+        
+        # Optional: Generate SPMD kernel wrapper for standalone testing
+        # Users can define PTO_GENERATE_SPMD_KERNEL to include this
+        lines.append("#ifdef PTO_GENERATE_SPMD_KERNEL")
+        lines.append("/**")
+        lines.append(f" * SPMD Kernel Wrapper (for standalone testing only)")
+        lines.append(f" * This launches the InCore function as a multi-core kernel.")
+        lines.append(f" * In production, use PTO Runtime to schedule tasks instead.")
+        lines.append(" */")
         lines.append(f"extern \"C\" __global__ __aicore__ void {program.name}_kernel(GM_ADDR input, GM_ADDR output) {{")
-        lines.append(f"    {program.name}Kernel op;")
+        lines.append(f"    {program.name}InCore op;")
         lines.append("    op.Init(input, output);")
         lines.append("    op.Process();")
         lines.append("}")
+        lines.append("#endif  // PTO_GENERATE_SPMD_KERNEL")
         
         return "\n".join(lines)
     
