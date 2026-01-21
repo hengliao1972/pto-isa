@@ -185,7 +185,13 @@ static int32_t ready_queue_pop(PTORuntime* rt) {
 // =============================================================================
 
 static void ready_queue_push_threadsafe(PTORuntime* rt, int32_t task_id) {
+    DEBUG_PRINT("[Queue] push_threadsafe: trying to lock for task %d\n", task_id);
+    fflush(stdout);
+    
     pthread_mutex_lock(&rt->queue_mutex);
+    
+    DEBUG_PRINT("[Queue] push_threadsafe: got lock for task %d, ready_count=%d\n", task_id, rt->ready_count);
+    fflush(stdout);
     
     if (rt->ready_count >= PTO_MAX_READY_QUEUE) {
         fprintf(stderr, "[PTO Runtime] ERROR: Ready queue overflow\n");
@@ -197,27 +203,45 @@ static void ready_queue_push_threadsafe(PTORuntime* rt, int32_t task_id) {
     rt->ready_tail = (rt->ready_tail + 1) % PTO_MAX_READY_QUEUE;
     rt->ready_count++;
     
-    // Signal waiting workers that a task is available
-    pthread_cond_signal(&rt->queue_not_empty);
+    // Broadcast to wake up all waiting workers (more responsive than signal)
+    pthread_cond_broadcast(&rt->queue_not_empty);
     
     pthread_mutex_unlock(&rt->queue_mutex);
+    
+    DEBUG_PRINT("[Queue] push_threadsafe: released lock, task %d queued\n", task_id);
+    fflush(stdout);
 }
 
 int32_t pto_get_ready_task_blocking(PTORuntime* rt) {
+    DEBUG_PRINT("[Queue] get_blocking: trying to lock\n");
+    fflush(stdout);
+    
     pthread_mutex_lock(&rt->queue_mutex);
     
-    // Wait until: task available OR shutdown requested OR all tasks done
-    while (rt->ready_count == 0 && !rt->shutdown_requested) {
+    DEBUG_PRINT("[Queue] get_blocking: got lock, ready_count=%d, started=%d\n", 
+           rt->ready_count, rt->execution_started);
+    fflush(stdout);
+    
+    // Wait until: (execution started AND task available) OR shutdown OR all done
+    while ((rt->ready_count == 0 || !rt->execution_started) && !rt->shutdown_requested) {
         // Check if all tasks are completed
         if (rt->execution_started && rt->total_tasks_completed >= rt->total_tasks_scheduled) {
             pthread_mutex_unlock(&rt->queue_mutex);
             return -1;  // All done
         }
         
-        // Wait for signal (with timeout to check shutdown periodically)
+        // Reduce debug spam - only print occasionally
+        static __thread int wait_count = 0;
+        if (++wait_count % 1000 == 1) {
+            DEBUG_PRINT("[Queue] get_blocking: waiting (ready=%d, started=%d, shutdown=%d, count=%d)\n", 
+                   rt->ready_count, rt->execution_started, rt->shutdown_requested, wait_count);
+            fflush(stdout);
+        }
+        
+        // Wait for signal (with short timeout for responsiveness)
         struct timespec timeout;
         clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_nsec += 10000000;  // 10ms timeout
+        timeout.tv_nsec += 100000;  // 100µs timeout
         if (timeout.tv_nsec >= 1000000000) {
             timeout.tv_sec++;
             timeout.tv_nsec -= 1000000000;
@@ -378,11 +402,13 @@ void pto_task_submit(PTORuntime* rt, int32_t task_id) {
     DEBUG_PRINT("[PTO Runtime] Submitted task %d: %s (fanin=%d, fanout=%d)\n",
            task_id, task->func_name, task->fanin, task->fanout_count);
     
-    // If no dependencies, add to ready queue
+    // If no dependencies, add directly to ready queue (thread-safe)
+    // This allows workers to start executing immediately
     if (task->fanin == 0) {
-        ready_queue_push(rt, task_id);
+        ready_queue_push_threadsafe(rt, task_id);
         DEBUG_PRINT("[PTO Runtime] Task %d is ready (no dependencies)\n", task_id);
     }
+    // Tasks with fanin > 0 stay in pend_task until dependencies complete
 }
 
 void pto_task_complete(PTORuntime* rt, int32_t task_id) {
@@ -841,6 +867,7 @@ static void* worker_thread_func(void* arg) {
     int worker_id __attribute__((unused)) = ctx->worker_id;
     
     DEBUG_PRINT("[Worker %d] Started\n", worker_id);
+    fflush(stdout);
     
     while (!rt->shutdown_requested) {
         // Get next ready task (blocking)
@@ -932,10 +959,19 @@ int runtime_entry_arm64(PTOOrchFunc orch_func, void* user_data, int num_workers)
             free(rt);
             return -1;
         }
+        printf("[PTO Runtime] Created worker thread %d\n", i);
+        fflush(stdout);
     }
+    
+    // Give workers a moment to start
+    struct timespec start_delay = {0, 10000000};  // 10ms
+    nanosleep(&start_delay, NULL);
+    printf("[PTO Runtime] Workers started, now building task graph...\n");
+    fflush(stdout);
     
     // Build task graph by calling orchestration function
     printf("[PTO Runtime] Building task graph...\n");
+    fflush(stdout);
     orch_func(rt, user_data);
     
     // Mark that orchestration is complete - all tasks are now submitted
@@ -954,7 +990,7 @@ int runtime_entry_arm64(PTOOrchFunc orch_func, void* user_data, int num_workers)
     
     // Wait for all tasks to complete
     // We poll active_task_count periodically
-    struct timespec poll_interval = {0, 50000000};  // 50ms
+    struct timespec poll_interval = {0, 1000000};  // 1ms (was 50ms - too slow!)
     while (1) {
         pthread_mutex_lock(&rt->task_mutex);
         bool all_done = (rt->total_tasks_completed >= rt->total_tasks_scheduled);
