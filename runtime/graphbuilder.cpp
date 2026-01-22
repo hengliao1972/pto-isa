@@ -421,61 +421,208 @@ int main(int argc, char **argv) {
         streamAicore = nullptr;
         return rc;
     }
+    // =========================================================================
+    // Run formula computation in a scope to avoid goto issues
+    // =========================================================================
+    {
+        std::cout << "\n=== Allocating Device Memory for Formula ===" << '\n';
 
-    // Create a test graph to pass to the kernel
-    // Graph topology: Diamond DAG pattern
-    //     t0
-    //    /  \
-    //   t1  t2
-    //    \  /
-    //     t3
-    // This tests parallel execution (t1 and t2 can run concurrently)
-    // and synchronization (t3 waits for both t1 and t2)
-    std::cout << "\n=== Creating Test Graph for Kernel ===" << '\n';
-    Graph testGraph;
-    uint64_t args[] = {1, 2, 3};
-    int t0 = testGraph.add_task(args, 3, 0);
-    int t1 = testGraph.add_task(args, 3, 1);
-    int t2 = testGraph.add_task(args, 3, 2);
-    int t3 = testGraph.add_task(args, 3, 3);
-    testGraph.add_successor(t0, t1);  // t0 → t1
-    testGraph.add_successor(t0, t2);  // t0 → t2
-    testGraph.add_successor(t1, t3);  // t1 → t3
-    testGraph.add_successor(t2, t3);  // t2 → t3
-    std::cout << "Created graph with " << testGraph.get_task_count() << " tasks in a pipeline\n";
-    testGraph.print_graph();
+        constexpr int ROWS = 128;
+        constexpr int COLS = 128;
+        constexpr int SIZE = ROWS * COLS;  // 16384 elements
+        constexpr size_t BYTES = SIZE * sizeof(float);
 
-    // Initialize graph args
-    rc = kernelArgs.InitGraphArgs(testGraph);
-    if (rc != 0) {
-        std::cerr << "Error: KernelArgs::InitGraphArgs failed: " << rc << '\n';
-        kernelArgs.FinalizeDeviceArgs();
-        soInfo.Finalize();
-        rtStreamDestroy(streamAicpu);
-        rtStreamDestroy(streamAicore);
-        streamAicpu = nullptr;
-        streamAicore = nullptr;
-        return rc;
+        // Allocate device memory for 6 tensors: a, b, c, d, e, f
+        void *dev_a = nullptr, *dev_b = nullptr, *dev_c = nullptr;
+        void *dev_d = nullptr, *dev_e = nullptr, *dev_f = nullptr;
+
+        // Helper lambda for cleanup
+        auto cleanup = [&]() {
+            if (dev_a) rtFree(dev_a);
+            if (dev_b) rtFree(dev_b);
+            if (dev_c) rtFree(dev_c);
+            if (dev_d) rtFree(dev_d);
+            if (dev_e) rtFree(dev_e);
+            if (dev_f) rtFree(dev_f);
+        };
+
+        rc = rtMalloc(&dev_a, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_a failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMalloc(&dev_b, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_b failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMalloc(&dev_c, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_c failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMalloc(&dev_d, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_d failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMalloc(&dev_e, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_e failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMalloc(&dev_f, BYTES, RT_MEMORY_HBM, 0);
+        if (rc != 0) { std::cerr << "Error: rtMalloc for dev_f failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        std::cout << "Allocated 6 tensors (128x128 each, " << BYTES << " bytes per tensor)\n";
+
+        // Initialize host arrays with constant values: a=2.0, b=3.0
+        std::vector<float> host_a(SIZE, 2.0f);
+        std::vector<float> host_b(SIZE, 3.0f);
+
+        // Copy initialized data to device
+        rc = rtMemcpy(dev_a, BYTES, host_a.data(), BYTES, RT_MEMCPY_HOST_TO_DEVICE);
+        if (rc != 0) { std::cerr << "Error: rtMemcpy for dev_a failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        rc = rtMemcpy(dev_b, BYTES, host_b.data(), BYTES, RT_MEMCPY_HOST_TO_DEVICE);
+        if (rc != 0) { std::cerr << "Error: rtMemcpy for dev_b failed: " << rc << '\n'; cleanup(); kernelArgs.FinalizeDeviceArgs(); soInfo.Finalize(); rtStreamDestroy(streamAicpu); rtStreamDestroy(streamAicore); return rc; }
+
+        std::cout << "Initialized input tensors: a=2.0, b=3.0 (all elements)\n";
+        std::cout << "Expected result: f = (2+3+1)*(2+3+2) = 6*7 = 42.0\n";
+
+        // =========================================================================
+        // Create task graph for formula: (a + b + 1)(a + b + 2)
+        // =========================================================================
+        std::cout << "\n=== Creating Task Graph for Formula ===" << '\n';
+        std::cout << "Formula: (a + b + 1)(a + b + 2)\n";
+        std::cout << "Tasks:\n";
+        std::cout << "  task0: c = a + b\n";
+        std::cout << "  task1: d = c + 1\n";
+        std::cout << "  task2: e = c + 2\n";
+        std::cout << "  task3: f = d * e\n\n";
+
+        Graph testGraph;
+
+        // Helper union to encode float scalar as uint64_t
+        union {
+            float f32;
+            uint64_t u64;
+        } scalar_converter;
+
+        // Task 0: c = a + b (func_id=0: kernel_add)
+        uint64_t args_t0[4];
+        args_t0[0] = reinterpret_cast<uint64_t>(dev_a);  // src0
+        args_t0[1] = reinterpret_cast<uint64_t>(dev_b);  // src1
+        args_t0[2] = reinterpret_cast<uint64_t>(dev_c);  // out
+        args_t0[3] = SIZE;                                // size
+        int t0 = testGraph.add_task(args_t0, 4, 0);
+
+        // Task 1: d = c + 1 (func_id=1: kernel_add_scalar)
+        uint64_t args_t1[4];
+        args_t1[0] = reinterpret_cast<uint64_t>(dev_c);  // src
+        scalar_converter.f32 = 1.0f;
+        args_t1[1] = scalar_converter.u64;                // scalar=1.0
+        args_t1[2] = reinterpret_cast<uint64_t>(dev_d);  // out
+        args_t1[3] = SIZE;                                // size
+        int t1 = testGraph.add_task(args_t1, 4, 1);
+
+        // Task 2: e = c + 2 (func_id=1: kernel_add_scalar)
+        uint64_t args_t2[4];
+        args_t2[0] = reinterpret_cast<uint64_t>(dev_c);  // src
+        scalar_converter.f32 = 2.0f;
+        args_t2[1] = scalar_converter.u64;                // scalar=2.0
+        args_t2[2] = reinterpret_cast<uint64_t>(dev_e);  // out
+        args_t2[3] = SIZE;                                // size
+        int t2 = testGraph.add_task(args_t2, 4, 1);
+
+        // Task 3: f = d * e (func_id=2: kernel_mul)
+        uint64_t args_t3[4];
+        args_t3[0] = reinterpret_cast<uint64_t>(dev_d);  // src0
+        args_t3[1] = reinterpret_cast<uint64_t>(dev_e);  // src1
+        args_t3[2] = reinterpret_cast<uint64_t>(dev_f);  // out
+        args_t3[3] = SIZE;                                // size
+        int t3 = testGraph.add_task(args_t3, 4, 2);
+
+        // Add dependencies
+        testGraph.add_successor(t0, t1);  // t0 → t1
+        testGraph.add_successor(t0, t2);  // t0 → t2
+        testGraph.add_successor(t1, t3);  // t1 → t3
+        testGraph.add_successor(t2, t3);  // t2 → t3
+
+        std::cout << "Created graph with " << testGraph.get_task_count() << " tasks\n";
+        testGraph.print_graph();
+
+        // Initialize graph args
+        rc = kernelArgs.InitGraphArgs(testGraph);
+        if (rc != 0) {
+            std::cerr << "Error: KernelArgs::InitGraphArgs failed: " << rc << '\n';
+            cleanup();
+            kernelArgs.FinalizeDeviceArgs();
+            soInfo.Finalize();
+            rtStreamDestroy(streamAicpu);
+            rtStreamDestroy(streamAicore);
+            return rc;
+        }
+        std::cout << "Graph transferred to device memory\n\n";
+
+        DeviceRunner &runner = DeviceRunner::Get();
+        int launchAicpuNum = 1;
+        rc = runner.Run(streamAicpu, streamAicore, &kernelArgs.args, launchAicpuNum);
+
+        rc = rtStreamSynchronize(streamAicpu);
+        if (rc != 0) {
+            std::cerr << "Error: rtStreamSynchronize failed: " << rc << '\n';
+            cleanup();
+            return rc;
+        }
+
+        rc = rtStreamSynchronize(streamAicore);
+        if (rc != 0) {
+            std::cerr << "Error: rtStreamSynchronize failed: " << rc << '\n';
+            cleanup();
+            return rc;
+        }
+
+        // =========================================================================
+        // Retrieve and validate results
+        // =========================================================================
+        std::cout << "\n=== Validating Results ===" << '\n';
+        {
+            std::vector<float> host_result(SIZE);
+            rc = rtMemcpy(host_result.data(), BYTES, dev_f, BYTES, RT_MEMCPY_DEVICE_TO_HOST);
+            if (rc != 0) {
+                std::cerr << "Error: rtMemcpy for result failed: " << rc << '\n';
+                cleanup();
+                return rc;
+            }
+
+            // Print sample values
+            std::cout << "First 10 elements of result:\n";
+            for (int i = 0; i < 10; i++) {
+                std::cout << "  f[" << i << "] = " << host_result[i] << '\n';
+            }
+
+            // Validate result
+            constexpr float EXPECTED = 42.0f;  // (2+3+1)*(2+3+2) = 6*7 = 42
+            bool all_correct = true;
+            int error_count = 0;
+            for (int i = 0; i < SIZE; i++) {
+                if (std::abs(host_result[i] - EXPECTED) > 0.001f) {
+                    if (error_count < 5) {
+                        std::cerr << "ERROR: f[" << i << "] = " << host_result[i]
+                                  << ", expected " << EXPECTED << '\n';
+                    }
+                    error_count++;
+                    all_correct = false;
+                }
+            }
+
+            if (all_correct) {
+                std::cout << "\n✓ SUCCESS: All " << SIZE << " elements are correct (42.0)\n";
+                std::cout << "Formula verified: (a + b + 1)(a + b + 2) = (2+3+1)*(2+3+2) = 42\n";
+            } else {
+                std::cerr << "\n✗ FAILED: " << error_count << " elements are incorrect\n";
+            }
+        }
+
+        PrintResult(kernelArgs.args, NUM_CORES);
+
+        // Cleanup device memory
+        std::cout << "\n=== Cleaning Up ===" << '\n';
+        cleanup();
+        std::cout << "Freed all device tensors\n";
     }
-    std::cout << "Graph transferred to device memory\n\n";
 
-    DeviceRunner &runner = DeviceRunner::Get();
-    int launchAicpuNum = 1;
-    rc = runner.Run(streamAicpu, streamAicore, &kernelArgs.args, launchAicpuNum);
-
-    rc = rtStreamSynchronize(streamAicpu);
-    if (rc != 0) {
-        std::cerr << "Error: rtStreamSynchronize failed: " << rc << '\n';
-        return rc;
-    }
-
-    rc = rtStreamSynchronize(streamAicore);
-    if (rc != 0) {
-        std::cerr << "Error: rtStreamSynchronize failed: " << rc << '\n';
-        return rc;
-    }
-
-    PrintResult(kernelArgs.args, NUM_CORES);
     kernelArgs.FinalizeGraphArgs();
     kernelArgs.FinalizeDeviceArgs();
     soInfo.Finalize();
