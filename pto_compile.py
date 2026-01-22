@@ -196,6 +196,677 @@ class PTOProgram:
         """Add an import for a function from another source file."""
         if func_name not in self.imports:
             self.imports.append(func_name)
+    
+    # =========================================================================
+    # Dependency Analysis and Graph Coloring
+    # =========================================================================
+    
+    def SimplifyAndColor(self, TOTAL_COLOR: int = 8, output_dir: str = ".", 
+                         visualize: bool = True, verbose: bool = False) -> bool:
+        """
+        Analyze instruction dependencies, build hypergraph, simplify, and color.
+        
+        This method performs:
+        1. Dependency analysis: Build hypergraph with RAW/WAW/WAR dependencies
+        2. Graph simplification: Remove transitive edges (A→B, B→C, A→C → remove A→C)
+        3. Graph coloring: Assign colors so neighbors have different colors
+        4. Visualization: Generate PDF showing before/after simplification and colored graph
+        
+        Args:
+            TOTAL_COLOR: Number of colors available (default 8)
+            output_dir: Directory for output files (PDF, etc.)
+            visualize: Whether to generate visualization PDFs
+            verbose: Print debug information
+            
+        Returns:
+            True if coloring succeeded, False otherwise
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Step 1: Initialize instruction IDs and dependency fields
+        for idx, instr in enumerate(self.instructions):
+            instr.init_dependency_fields(idx)
+        
+        # Step 2: Build dependency hypergraph
+        self._build_dependency_graph(verbose)
+        
+        # Step 3: Visualize original graph (before simplification)
+        if visualize:
+            self.plot_program_graph(
+                os.path.join(output_dir, f"{self.name}_deps_original.pdf"),
+                title=f"{self.name} - Original Dependency Graph"
+            )
+        
+        # Step 4: Simplify graph (remove transitive edges)
+        edges_removed = self._simplify_graph(verbose)
+        if verbose:
+            print(f"SimplifyGraph: Removed {edges_removed} transitive edges")
+        
+        # Step 5: Visualize simplified graph
+        if visualize:
+            self.plot_program_graph(
+                os.path.join(output_dir, f"{self.name}_deps_simplified.pdf"),
+                title=f"{self.name} - Simplified Graph ({edges_removed} edges removed)"
+            )
+        
+        # Step 6: Graph coloring
+        success = self._graph_coloring(TOTAL_COLOR, verbose)
+        
+        # Step 7: Visualize colored graph
+        if visualize:
+            self.plot_program_graph(
+                os.path.join(output_dir, f"{self.name}_deps_colored.pdf"),
+                title=f"{self.name} - Colored Graph (colors={TOTAL_COLOR}, success={success})",
+                show_colors=True
+            )
+            
+            # Generate combined comparison PDF
+            self._generate_comparison_pdf(output_dir)
+        
+        return success
+    
+    def _get_instr_defs(self, instr: 'PTOInstruction') -> List[str]:
+        """Get variables defined (written) by an instruction."""
+        defs = []
+        opcode = getattr(instr, 'opcode', '')
+        
+        # Check for dst attribute (most instructions)
+        if hasattr(instr, 'dst'):
+            dst = instr.dst
+            if hasattr(dst, 'name'):
+                defs.append(dst.name)
+            elif isinstance(dst, str):
+                defs.append(dst)
+        
+        # TSTORE writes to memory
+        if opcode == 'TSTORE' and hasattr(instr, 'dst_mem'):
+            if hasattr(instr.dst_mem, 'name'):
+                defs.append(instr.dst_mem.name)
+        
+        # Scalar instructions
+        if opcode == 'SLI' and hasattr(instr, 'dst'):
+            dst = instr.dst
+            if hasattr(dst, 'name'):
+                defs.append(dst.name)
+            elif isinstance(dst, str):
+                defs.append(dst)
+        
+        return defs
+    
+    def _get_instr_uses(self, instr: 'PTOInstruction') -> List[str]:
+        """Get variables used (read) by an instruction."""
+        uses = []
+        opcode = getattr(instr, 'opcode', '')
+        
+        # Source operands - check various attribute names
+        for attr in ['src', 'src0', 'src1', 'src2', 'a', 'b', 'c', 'src_mem', 
+                     'tile', 'row_vals', 'cond', 'idx', 'mem', 'fp']:
+            if hasattr(instr, attr):
+                src = getattr(instr, attr)
+                if src is not None:
+                    if hasattr(src, 'name'):
+                        uses.append(src.name)
+                    elif isinstance(src, str):
+                        uses.append(src)
+        
+        # TLOAD reads from memory
+        if opcode == 'TLOAD' and hasattr(instr, 'src_mem'):
+            if hasattr(instr.src_mem, 'name'):
+                uses.append(instr.src_mem.name)
+        
+        # Index operands for memory operations
+        for attr in ['row_offset', 'col_offset']:
+            if hasattr(instr, attr):
+                idx = getattr(instr, attr)
+                if hasattr(idx, 'name'):
+                    uses.append(idx.name)
+        
+        # CALL instruction arguments
+        if opcode == 'CALL' and hasattr(instr, 'args'):
+            for arg_val in instr.args.values():
+                if isinstance(arg_val, tuple):
+                    # (tensor, row_off, col_off) format
+                    if len(arg_val) >= 1:
+                        uses.append(arg_val[0] if isinstance(arg_val[0], str) else str(arg_val[0]))
+                elif hasattr(arg_val, 'name'):
+                    uses.append(arg_val.name)
+                elif isinstance(arg_val, str):
+                    uses.append(arg_val)
+        
+        return uses
+    
+    def _is_indirect_memory_access(self, instr: 'PTOInstruction') -> bool:
+        """Check if instruction uses indirect (variable) memory addressing."""
+        for attr in ['row_offset', 'col_offset']:
+            if hasattr(instr, attr):
+                idx = getattr(instr, attr)
+                # If it's an IndexOperand (variable) rather than ImmediateOperand (constant)
+                if hasattr(idx, 'name'):
+                    return True
+        return False
+    
+    def _build_dependency_graph(self, verbose: bool = False):
+        """
+        Build dependency hypergraph analyzing RAW, WAW, WAR dependencies.
+        
+        For indirect addressing, conservatively assume dependencies on all
+        potential conflicting instructions.
+        """
+        n = len(self.instructions)
+        
+        # Track last writer and readers for each variable
+        last_writer: Dict[str, int] = {}  # var -> instr_id
+        last_readers: Dict[str, List[int]] = {}  # var -> list of instr_ids
+        
+        # Track loop context for cyclic dependencies
+        loop_stack: List[Tuple[int, int]] = []  # (FOR instr_id, start_idx)
+        
+        # Track all memory-accessing instructions for conservative analysis
+        memory_writers: List[int] = []  # Instructions that write to memory
+        memory_readers: List[int] = []  # Instructions that read from memory
+        
+        for idx, instr in enumerate(self.instructions):
+            opcode = getattr(instr, 'opcode', '')
+            
+            # Handle loop boundaries for cyclic dependencies
+            if opcode == 'FOR':
+                loop_stack.append((idx, idx + 1))
+            elif opcode == 'ENDFOR' and loop_stack:
+                loop_start_for, loop_body_start = loop_stack.pop()
+                # Add cyclic dependencies: last iteration writes -> first iteration reads
+                self._add_loop_carried_deps(loop_body_start, idx, verbose)
+            
+            defs = self._get_instr_defs(instr)
+            uses = self._get_instr_uses(instr)
+            is_indirect = self._is_indirect_memory_access(instr)
+            
+            if verbose:
+                print(f"[{idx}] {opcode}: defs={defs}, uses={uses}, indirect={is_indirect}")
+            
+            # RAW (Read After Write) - true dependency
+            for var in uses:
+                if var in last_writer:
+                    writer_id = last_writer[var]
+                    instr.add_pred(writer_id)
+                    self.instructions[writer_id].add_succ(idx)
+            
+            # WAW (Write After Write) - output dependency
+            for var in defs:
+                if var in last_writer:
+                    writer_id = last_writer[var]
+                    instr.add_pred(writer_id)
+                    self.instructions[writer_id].add_succ(idx)
+            
+            # WAR (Write After Read) - anti dependency
+            for var in defs:
+                if var in last_readers:
+                    for reader_id in last_readers[var]:
+                        if reader_id != idx:
+                            instr.add_pred(reader_id)
+                            self.instructions[reader_id].add_succ(idx)
+            
+            # Conservative handling for indirect memory access
+            if is_indirect:
+                if opcode in ('TLOAD', 'MGATHER'):
+                    # May read from anywhere - depend on all previous memory writers
+                    for writer_id in memory_writers:
+                        if writer_id != idx:
+                            instr.add_pred(writer_id)
+                            self.instructions[writer_id].add_succ(idx)
+                    memory_readers.append(idx)
+                    
+                elif opcode in ('TSTORE', 'TSTORE_FP', 'MSCATTER'):
+                    # May write anywhere - depend on all previous memory readers/writers
+                    for reader_id in memory_readers:
+                        if reader_id != idx:
+                            instr.add_pred(reader_id)
+                            self.instructions[reader_id].add_succ(idx)
+                    for writer_id in memory_writers:
+                        if writer_id != idx:
+                            instr.add_pred(writer_id)
+                            self.instructions[writer_id].add_succ(idx)
+                    memory_writers.append(idx)
+            else:
+                # Track non-indirect memory operations too
+                if opcode in ('TLOAD', 'MGATHER'):
+                    memory_readers.append(idx)
+                elif opcode in ('TSTORE', 'TSTORE_FP', 'MSCATTER'):
+                    memory_writers.append(idx)
+            
+            # Update tracking structures
+            for var in defs:
+                last_writer[var] = idx
+                last_readers[var] = []  # Clear readers after write
+            
+            for var in uses:
+                if var not in last_readers:
+                    last_readers[var] = []
+                if idx not in last_readers[var]:
+                    last_readers[var].append(idx)
+    
+    def _add_loop_carried_deps(self, loop_start: int, loop_end: int, verbose: bool = False):
+        """Add loop-carried dependencies (cyclic edges in the hypergraph)."""
+        # Find variables written in loop body
+        loop_writers: Dict[str, int] = {}  # var -> last writer in loop
+        loop_readers: Dict[str, List[int]] = {}  # var -> readers in loop
+        
+        for idx in range(loop_start, loop_end):
+            instr = self.instructions[idx]
+            defs = self._get_instr_defs(instr)
+            uses = self._get_instr_uses(instr)
+            
+            for var in defs:
+                loop_writers[var] = idx
+            
+            for var in uses:
+                if var not in loop_readers:
+                    loop_readers[var] = []
+                loop_readers[var].append(idx)
+        
+        # Add cyclic dependencies: writes at end affect reads at start
+        for var, writer_id in loop_writers.items():
+            if var in loop_readers:
+                for reader_id in loop_readers[var]:
+                    if reader_id != writer_id:
+                        # This is a loop-carried dependency
+                        self.instructions[reader_id].add_succ(writer_id)
+                        self.instructions[writer_id].add_pred(reader_id)
+                        if verbose:
+                            print(f"  Loop-carried: {reader_id} <-> {writer_id} (var={var})")
+    
+    def _simplify_graph(self, verbose: bool = False) -> int:
+        """
+        Remove transitive edges: if A→B, B→C, A→C all exist, remove A→C.
+        
+        Returns number of edges removed.
+        """
+        edges_removed = 0
+        changed = True
+        
+        while changed:
+            changed = False
+            for instr in self.instructions:
+                if not instr.fanin_pred:
+                    continue
+                
+                # Get all neighbors reachable via 2-hop paths
+                indirect_reachable = set()
+                for pred_id in list(instr.fanin_pred):
+                    pred_instr = self.instructions[pred_id]
+                    if pred_instr.fanin_pred:
+                        indirect_reachable.update(pred_instr.fanin_pred)
+                
+                # Remove direct edges that are also reachable indirectly
+                edges_to_remove = []
+                for pred_id in instr.fanin_pred:
+                    if pred_id in indirect_reachable:
+                        edges_to_remove.append(pred_id)
+                
+                for pred_id in edges_to_remove:
+                    instr.fanin_pred.remove(pred_id)
+                    # Also remove from the predecessor's succ list
+                    pred_instr = self.instructions[pred_id]
+                    if pred_instr.fanin_succ and instr.instr_id in pred_instr.fanin_succ:
+                        pred_instr.fanin_succ.remove(instr.instr_id)
+                    edges_removed += 1
+                    changed = True
+                    if verbose:
+                        print(f"  Removed transitive edge: {pred_id} -> {instr.instr_id}")
+        
+        return edges_removed
+    
+    def _graph_coloring(self, TOTAL_COLOR: int, verbose: bool = False) -> bool:
+        """
+        Graph coloring algorithm with degree reduction optimization.
+        
+        If a node has degree >= TOTAL_COLOR-1, apply edge reduction by
+        adding edges between its predecessors to reduce its degree.
+        
+        Returns True if coloring succeeded, False otherwise.
+        """
+        max_iterations = len(self.instructions) * 10
+        iteration = 0
+        
+        while iteration < max_iterations:
+            iteration += 1
+            
+            # Find node with highest degree
+            max_degree = 0
+            max_degree_idx = -1
+            
+            for instr in self.instructions:
+                degree = instr.get_degree()
+                if degree > max_degree:
+                    max_degree = degree
+                    max_degree_idx = instr.instr_id
+            
+            if verbose:
+                print(f"Iteration {iteration}: max_degree={max_degree} at node {max_degree_idx}")
+            
+            # If max degree is manageable, proceed to coloring
+            if max_degree < TOTAL_COLOR:
+                break
+            
+            # Apply degree reduction: add edges between neighbors
+            hot_instr = self.instructions[max_degree_idx]
+            neighbors = hot_instr.get_all_neighbors()
+            
+            # Find two neighbors that are not already connected
+            reduction_done = False
+            for i, n1 in enumerate(neighbors):
+                if reduction_done:
+                    break
+                for n2 in neighbors[i+1:]:
+                    instr1 = self.instructions[n1]
+                    instr2 = self.instructions[n2]
+                    
+                    # Check if they are not already neighbors
+                    if n2 not in instr1.get_all_neighbors():
+                        # Add edge n1 -> n2
+                        instr1.add_succ(n2)
+                        instr2.add_pred(n1)
+                        
+                        # Remove edge n1 -> hot (if exists)
+                        if n1 in hot_instr.fanin_pred:
+                            hot_instr.fanin_pred.remove(n1)
+                            if hot_instr.instr_id in instr1.fanin_succ:
+                                instr1.fanin_succ.remove(hot_instr.instr_id)
+                        elif n1 in hot_instr.fanin_succ:
+                            hot_instr.fanin_succ.remove(n1)
+                            if hot_instr.instr_id in instr1.fanin_pred:
+                                instr1.fanin_pred.remove(hot_instr.instr_id)
+                        
+                        if verbose:
+                            print(f"  Degree reduction: added {n1}->{n2}, removed edge to {max_degree_idx}")
+                        
+                        reduction_done = True
+                        break
+            
+            if not reduction_done:
+                if verbose:
+                    print(f"  Cannot reduce degree further - coloring may fail")
+                break
+        
+        # Perform actual coloring using greedy algorithm
+        return self._greedy_coloring(TOTAL_COLOR, verbose)
+    
+    def _greedy_coloring(self, TOTAL_COLOR: int, verbose: bool = False) -> bool:
+        """
+        Greedy graph coloring algorithm.
+        
+        Assigns colors to nodes ensuring no two neighbors share the same color.
+        """
+        # Reset all colors
+        for instr in self.instructions:
+            instr.color = -1
+        
+        # Sort by degree (highest first) for better coloring
+        sorted_instrs = sorted(self.instructions, key=lambda x: -x.get_degree())
+        
+        for instr in sorted_instrs:
+            # Find colors used by neighbors
+            used_colors = set()
+            for neighbor_id in instr.get_all_neighbors():
+                neighbor_color = self.instructions[neighbor_id].color
+                if neighbor_color >= 0:
+                    used_colors.add(neighbor_color)
+            
+            # Assign smallest available color
+            for color in range(TOTAL_COLOR):
+                if color not in used_colors:
+                    instr.color = color
+                    break
+            
+            if instr.color < 0:
+                if verbose:
+                    print(f"  Failed to color instruction {instr.instr_id} "
+                          f"(degree={instr.get_degree()}, needed colors > {TOTAL_COLOR})")
+                return False
+        
+        if verbose:
+            color_counts = {}
+            for instr in self.instructions:
+                color_counts[instr.color] = color_counts.get(instr.color, 0) + 1
+            print(f"Coloring succeeded: {color_counts}")
+        
+        return True
+    
+    def plot_program_graph(self, output_path: str, title: str = None, show_colors: bool = False):
+        """
+        Generate a PDF visualization of the instruction dependency graph.
+        
+        Args:
+            output_path: Path for output PDF file
+            title: Graph title (default: program name)
+            show_colors: Whether to color nodes by their assigned color
+        """
+        try:
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend
+            import matplotlib.pyplot as plt
+            import matplotlib.patches as mpatches
+            from matplotlib.patches import FancyBboxPatch
+            import numpy as np
+        except ImportError:
+            print("Warning: matplotlib not available, skipping visualization")
+            return
+        
+        if title is None:
+            title = f"{self.name} Dependency Graph"
+        
+        n = len(self.instructions)
+        if n == 0:
+            return
+        
+        # Create figure - wider to accommodate longer labels
+        fig_height = max(8, n * 0.5)
+        fig_width = 16
+        fig, ax = plt.subplots(1, 1, figsize=(fig_width, fig_height))
+        
+        # Color palette for graph coloring visualization
+        color_palette = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+            '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+            '#BB8FCE', '#85C1E9', '#F8B500', '#00CED1'
+        ]
+        
+        # Layout parameters - wider boxes
+        box_width = 2.0
+        box_height = 0.6
+        x_center = 2.5
+        y_spacing = 0.8
+        
+        # Layout: arrange nodes vertically by instruction order
+        positions = {}
+        for idx, instr in enumerate(self.instructions):
+            x = x_center
+            y = (n - idx - 0.5) * y_spacing
+            positions[idx] = (x, y)
+        
+        # Draw edges first (so they appear behind nodes)
+        for instr in self.instructions:
+            src_id = instr.instr_id
+            sx, sy = positions[src_id]
+            
+            # Draw predecessor edges (incoming - use different style)
+            if instr.fanin_pred:
+                for pred_id in instr.fanin_pred:
+                    px, py = positions[pred_id]
+                    # Curved arrow for better visibility
+                    ax.annotate('', xy=(sx - box_width/2 - 0.1, sy), 
+                               xytext=(px - box_width/2 - 0.1, py),
+                               arrowprops=dict(arrowstyle='->', color='#3498DB', 
+                                             connectionstyle='arc3,rad=0.15',
+                                             alpha=0.7, lw=1.5))
+            
+            # Draw successor edges (outgoing - for cyclic deps)
+            if instr.fanin_succ:
+                for succ_id in instr.fanin_succ:
+                    # Only draw if not already drawn as pred edge (avoid duplicates)
+                    succ_instr = self.instructions[succ_id]
+                    if src_id not in (succ_instr.fanin_pred or []):
+                        sx2, sy2 = positions[succ_id]
+                        ax.annotate('', xy=(sx2 + box_width/2 + 0.1, sy2), 
+                                   xytext=(sx + box_width/2 + 0.1, sy),
+                                   arrowprops=dict(arrowstyle='->', color='#E74C3C',
+                                                 connectionstyle='arc3,rad=-0.15',
+                                                 alpha=0.7, lw=1.5, linestyle='--'))
+        
+        # Draw nodes
+        for instr in self.instructions:
+            idx = instr.instr_id
+            x, y = positions[idx]
+            
+            # Node color
+            if show_colors and instr.color >= 0:
+                node_color = color_palette[instr.color % len(color_palette)]
+            else:
+                node_color = '#FFFFFF'
+            
+            # Draw node box - shorter opcode label
+            opcode = getattr(instr, 'opcode', '?')
+            # Shorten some common opcodes
+            short_opcode = opcode.replace('TROWEXPAND', 'TREXP').replace('TMATMUL', 'TMM')
+            
+            label = f"[{idx}] {short_opcode}"
+            if show_colors and instr.color >= 0:
+                label += f" c{instr.color}"
+            
+            # Add degree info
+            degree = instr.get_degree()
+            if degree > 0:
+                label += f" d{degree}"
+            
+            bbox = FancyBboxPatch((x - box_width/2, y - box_height/2), 
+                                  box_width, box_height,
+                                  boxstyle="round,pad=0.03",
+                                  facecolor=node_color,
+                                  edgecolor='#2C3E50',
+                                  linewidth=1.5)
+            ax.add_patch(bbox)
+            ax.text(x, y, label, ha='center', va='center', fontsize=7,
+                   fontweight='bold' if degree > 3 else 'normal',
+                   fontfamily='monospace')
+        
+        # Set axis properties
+        ax.set_xlim(-0.5, x_center + box_width + 1)
+        ax.set_ylim(-0.5, n * y_spacing + 0.5)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title(title, fontsize=11, fontweight='bold')
+        
+        # Legend
+        if show_colors:
+            legend_patches = []
+            for c in range(min(8, max(instr.color for instr in self.instructions) + 1)):
+                legend_patches.append(mpatches.Patch(color=color_palette[c], label=f'Color {c}'))
+            ax.legend(handles=legend_patches, loc='upper right', fontsize=8)
+        
+        # Add edge legend
+        pred_line = plt.Line2D([0], [0], color='#3498DB', linewidth=2, label='Pred (RAW/WAW/WAR)')
+        succ_line = plt.Line2D([0], [0], color='#E74C3C', linewidth=2, linestyle='--', label='Succ (loop-carried)')
+        ax.legend(handles=[pred_line, succ_line], loc='lower right', fontsize=8)
+        
+        plt.tight_layout()
+        plt.savefig(output_path, format='pdf', bbox_inches='tight', dpi=150)
+        plt.close()
+        
+        print(f"Generated dependency graph: {output_path}")
+    
+    def _generate_comparison_pdf(self, output_dir: str):
+        """Generate a single PDF with original, simplified, and colored graphs side by side."""
+        try:
+            from PyPDF2 import PdfMerger
+            import os
+            
+            merger = PdfMerger()
+            pdf_files = [
+                os.path.join(output_dir, f"{self.name}_deps_original.pdf"),
+                os.path.join(output_dir, f"{self.name}_deps_simplified.pdf"),
+                os.path.join(output_dir, f"{self.name}_deps_colored.pdf"),
+            ]
+            
+            for pdf in pdf_files:
+                if os.path.exists(pdf):
+                    merger.append(pdf)
+            
+            combined_path = os.path.join(output_dir, f"{self.name}_deps_comparison.pdf")
+            merger.write(combined_path)
+            merger.close()
+            print(f"Generated comparison PDF: {combined_path}")
+            
+        except ImportError:
+            print("PyPDF2 not available, skipping combined PDF generation")
+    
+    def dump_pto_asm_with_deps(self, output_path: str = None) -> str:
+        """
+        Generate PTO assembly with dependency and color information.
+        
+        Returns the assembly string and optionally writes to file.
+        """
+        lines = []
+        lines.append(f"// PTO Program: {self.name}")
+        lines.append(f"// Generated by PTO ISA Compiler (with dependency analysis)")
+        lines.append(f"// Function Type: {'InCore' if self.is_in_core else 'Orchestration'}")
+        lines.append("")
+        
+        # Emit imports
+        if self.imports:
+            for imp in self.imports:
+                lines.append(f"#import @{imp}")
+            lines.append("")
+        
+        # Function signature
+        memref_params = [f"%{name}: {mtype}" for name, mtype in self.memref_declarations.items()]
+        if memref_params:
+            lines.append(f"func @{self.name}({', '.join(memref_params)}) {{")
+        else:
+            lines.append(f"func @{self.name}() {{")
+        
+        # Declarations
+        lines.append("  // Tile Declarations")
+        for name, tile_type in self.tile_declarations.items():
+            lines.append(f"  %{name} = alloc_tile : {tile_type}")
+        
+        if self.scalar_declarations:
+            lines.append("")
+            lines.append("  // Scalar Declarations")
+            for name, dtype in self.scalar_declarations.items():
+                lines.append(f"  %{name} = alloc_scalar : {dtype.value}")
+        
+        lines.append("")
+        lines.append("  // Instructions (with dependency info)")
+        
+        # Instructions with dependency info
+        indent_level = 1
+        for instr in self.instructions:
+            opcode = getattr(instr, 'opcode', '')
+            
+            # Handle indentation for control flow
+            if opcode == 'ENDFOR' or opcode == 'ENDIF':
+                indent_level = max(1, indent_level - 1)
+            elif opcode == 'ELSE':
+                indent_level = max(1, indent_level - 1)
+            
+            indent = "  " * indent_level
+            asm_line = instr.to_pto_as_with_deps()
+            lines.append(f"{indent}{asm_line}")
+            
+            if opcode in ('FOR', 'IF', 'ELSE'):
+                indent_level += 1
+        
+        lines.append("  return")
+        lines.append("}")
+        
+        result = "\n".join(lines)
+        
+        if output_path:
+            with open(output_path, 'w') as f:
+                f.write(result)
+            print(f"Generated PTO assembly with deps: {output_path}")
+        
+        return result
 
 
 # =============================================================================

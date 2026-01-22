@@ -1250,7 +1250,55 @@ Operand = Union[TileOperand, ScalarOperand, MemRefOperand, IndexOperand, Immedia
 # =============================================================================
 
 class PTOInstruction(ABC):
-    """Base class for all PTO instructions."""
+    """
+    Base class for all PTO instructions.
+    
+    Dependency Analysis Fields (initialized by SimplifyAndColor):
+        instr_id: Unique instruction index within the program
+        fanin_pred: List of predecessor instruction IDs that this instruction depends on
+        fanin_succ: List of successor instruction IDs (for cyclic dependencies in loops)
+        color: Color assigned by graph coloring algorithm (-1 = uncolored)
+    """
+    
+    # Dependency analysis fields - initialized lazily by SimplifyAndColor
+    instr_id: int = -1
+    fanin_pred: List[int] = None  # Predecessor dependencies
+    fanin_succ: List[int] = None  # Successor dependencies (cyclic in loops)
+    color: int = -1               # Graph coloring result
+    
+    def init_dependency_fields(self, instr_id: int):
+        """Initialize dependency tracking fields."""
+        self.instr_id = instr_id
+        self.fanin_pred = []
+        self.fanin_succ = []
+        self.color = -1
+    
+    def add_pred(self, pred_id: int):
+        """Add a predecessor dependency."""
+        if self.fanin_pred is None:
+            self.fanin_pred = []
+        if pred_id not in self.fanin_pred and pred_id != self.instr_id:
+            self.fanin_pred.append(pred_id)
+    
+    def add_succ(self, succ_id: int):
+        """Add a successor dependency (for loop-carried dependencies)."""
+        if self.fanin_succ is None:
+            self.fanin_succ = []
+        if succ_id not in self.fanin_succ and succ_id != self.instr_id:
+            self.fanin_succ.append(succ_id)
+    
+    def get_all_neighbors(self) -> List[int]:
+        """Get all neighbor instruction IDs (both pred and succ)."""
+        neighbors = set()
+        if self.fanin_pred:
+            neighbors.update(self.fanin_pred)
+        if self.fanin_succ:
+            neighbors.update(self.fanin_succ)
+        return list(neighbors)
+    
+    def get_degree(self) -> int:
+        """Get the degree (number of neighbors) of this instruction."""
+        return len(self.get_all_neighbors())
     
     @property
     @abstractmethod
@@ -1262,6 +1310,22 @@ class PTOInstruction(ABC):
     def to_pto_as(self) -> str:
         """Generate PTO assembly syntax."""
         pass
+    
+    def to_pto_as_with_deps(self) -> str:
+        """Generate PTO assembly with dependency info."""
+        base_asm = self.to_pto_as()
+        deps_info = []
+        if self.instr_id >= 0:
+            deps_info.append(f"id={self.instr_id}")
+        if self.color >= 0:
+            deps_info.append(f"color={self.color}")
+        if self.fanin_pred:
+            deps_info.append(f"pred=[{','.join(map(str, self.fanin_pred))}]")
+        if self.fanin_succ:
+            deps_info.append(f"succ=[{','.join(map(str, self.fanin_succ))}]")
+        if deps_info:
+            return f"{base_asm}  // {' '.join(deps_info)}"
+        return base_asm
     
     def codegen_arm64_ir(self, ctx: ARM64CodeGenContext) -> CodeGenIR:
         """
