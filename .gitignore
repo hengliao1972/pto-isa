@@ -14,6 +14,11 @@ venv/
 examples/output_ascend_a2a3/
 examples/output_ascend_a5/
 
+# Generated dependency analysis outputs
+examples/output_deps_test/
+examples/output_matmul_coloring/
+examples/output_pto/llama7b_colored/
+
 # Ascend simulator debug dumps
 core*_*.dump
 profile_*_log*.toml

@@ -659,9 +659,9 @@ class PTOProgram:
         if n == 0:
             return
         
-        # Create figure - wider to accommodate longer labels
-        fig_height = max(8, n * 0.5)
-        fig_width = 16
+        # Create figure - narrower for compact boxes
+        fig_height = max(10, n * 0.45)
+        fig_width = 8
         fig, ax = plt.subplots(1, 1, figsize=(fig_width, fig_height))
         
         # Color palette for graph coloring visualization
@@ -671,11 +671,14 @@ class PTOProgram:
             '#BB8FCE', '#85C1E9', '#F8B500', '#00CED1'
         ]
         
-        # Layout parameters - wider boxes
-        box_width = 2.0
-        box_height = 0.6
-        x_center = 2.5
-        y_spacing = 0.8
+        # Layout parameters - narrow box for wait_flag + assembly + set_flag
+        box_width = 2.2
+        box_height = 1.2
+        x_center = 1.8
+        y_spacing = 1.4
+        
+        # Build a map from instr_id to color for quick lookup
+        id_to_color = {instr.instr_id: instr.color for instr in self.instructions}
         
         # Layout: arrange nodes vertically by instruction order
         positions = {}
@@ -724,35 +727,61 @@ class PTOProgram:
             else:
                 node_color = '#FFFFFF'
             
-            # Draw node box - shorter opcode label
-            opcode = getattr(instr, 'opcode', '?')
-            # Shorten some common opcodes
-            short_opcode = opcode.replace('TROWEXPAND', 'TREXP').replace('TMATMUL', 'TMM')
+            # Get full assembly line (without dependency info comments)
+            full_asm = instr.to_pto_as().strip()
+            # Truncate type annotations for readability
+            if ' : ' in full_asm:
+                full_asm = full_asm.split(' : ')[0].strip()
             
-            label = f"[{idx}] {short_opcode}"
+            # Collect wait_flag colors from fanin_pred and fanin_succ
+            wait_colors = set()
+            if instr.fanin_pred:
+                for pred_id in instr.fanin_pred:
+                    if pred_id in id_to_color and id_to_color[pred_id] >= 0:
+                        wait_colors.add(id_to_color[pred_id])
+            if instr.fanin_succ:
+                for succ_id in instr.fanin_succ:
+                    if succ_id in id_to_color and id_to_color[succ_id] >= 0:
+                        wait_colors.add(id_to_color[succ_id])
+            
+            # Line 1: wait_flag (if there are dependencies)
+            if wait_colors:
+                sorted_colors = sorted(wait_colors)
+                line1 = f"wait_flag({', '.join(map(str, sorted_colors))})"
+            else:
+                line1 = ""
+            
+            # Line 2: instruction id and assembly
+            line2 = f"[{idx:2d}] {full_asm}"
+            
+            # Truncate if too long
+            max_label_len = 18
+            if len(line2) > max_label_len:
+                line2 = line2[:max_label_len-2] + ".."
+            
+            # Line 3: set_flag
             if show_colors and instr.color >= 0:
-                label += f" c{instr.color}"
+                line3 = f"set_flag({instr.color})"
+            else:
+                line3 = ""
             
-            # Add degree info
-            degree = instr.get_degree()
-            if degree > 0:
-                label += f" d{degree}"
+            # Combine lines (skip empty lines)
+            lines_list = [l for l in [line1, line2, line3] if l]
+            label = "\n".join(lines_list)
             
             bbox = FancyBboxPatch((x - box_width/2, y - box_height/2), 
                                   box_width, box_height,
-                                  boxstyle="round,pad=0.03",
+                                  boxstyle="round,pad=0.02",
                                   facecolor=node_color,
                                   edgecolor='#2C3E50',
-                                  linewidth=1.5)
+                                  linewidth=1.2)
             ax.add_patch(bbox)
             ax.text(x, y, label, ha='center', va='center', fontsize=7,
-                   fontweight='bold' if degree > 3 else 'normal',
-                   fontfamily='monospace')
+                   fontfamily='monospace', linespacing=1.1, color='black')
         
         # Set axis properties
-        ax.set_xlim(-0.5, x_center + box_width + 1)
+        ax.set_xlim(-1, x_center + box_width/2 + 2)
         ax.set_ylim(-0.5, n * y_spacing + 0.5)
-        ax.set_aspect('equal')
         ax.axis('off')
         ax.set_title(title, fontsize=11, fontweight='bold')
         
@@ -836,7 +865,10 @@ class PTOProgram:
                 lines.append(f"  %{name} = alloc_scalar : {dtype.value}")
         
         lines.append("")
-        lines.append("  // Instructions (with dependency info)")
+        lines.append("  // Instructions (with dependency info and synchronization flags)")
+        
+        # Build a map from instr_id to color for quick lookup
+        id_to_color = {instr.instr_id: instr.color for instr in self.instructions}
         
         # Instructions with dependency info
         indent_level = 1
@@ -850,8 +882,30 @@ class PTOProgram:
                 indent_level = max(1, indent_level - 1)
             
             indent = "  " * indent_level
+            
+            # Collect wait_flag colors from fanin_pred and fanin_succ
+            wait_colors = set()
+            if instr.fanin_pred:
+                for pred_id in instr.fanin_pred:
+                    if pred_id in id_to_color and id_to_color[pred_id] >= 0:
+                        wait_colors.add(id_to_color[pred_id])
+            if instr.fanin_succ:
+                for succ_id in instr.fanin_succ:
+                    if succ_id in id_to_color and id_to_color[succ_id] >= 0:
+                        wait_colors.add(id_to_color[succ_id])
+            
+            # Print wait_flag before instruction (if there are dependencies)
+            if wait_colors:
+                sorted_colors = sorted(wait_colors)
+                lines.append(f"{indent}wait_flag({', '.join(map(str, sorted_colors))})")
+            
+            # Print the instruction
             asm_line = instr.to_pto_as_with_deps()
             lines.append(f"{indent}{asm_line}")
+            
+            # Print set_flag after instruction (if color assigned)
+            if instr.color >= 0:
+                lines.append(f"{indent}set_flag({instr.color})")
             
             if opcode in ('FOR', 'IF', 'ELSE'):
                 indent_level += 1
