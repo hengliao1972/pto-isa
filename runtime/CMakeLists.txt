@@ -16,12 +16,17 @@ else()
 endif()
 
 # Compile kernels
-add_subdirectory(common)
 add_subdirectory(aicpu)
 add_subdirectory(aicore)
 
+# Python bindings (optional - requires Python and pybind11)
+option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+if(BUILD_PYTHON_BINDINGS)
+    add_subdirectory(python)
+endif()
+
 # Compile host graph executor
-add_executable(graph_executor graphbuilder.cpp devicerunner.cpp memoryallocator.cpp graph/graph.cpp)
+add_executable(graph_executor graphbuilder.cpp host/devicerunner.cpp host/memoryallocator.cpp graph/graph.cpp)
 
 target_include_directories(graph_executor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

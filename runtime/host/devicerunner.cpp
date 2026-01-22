@@ -6,7 +6,7 @@
  */
 
 #include "devicerunner.h"
-#include "graph/graph.h"
+#include "../graph/graph.h"
 #include <cstring>
 #include <fstream>
 #include <iostream>

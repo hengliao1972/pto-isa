@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <pto/pto-inst.hpp>
 #include <pto/common/constants.hpp>
-#include "../common/handshake.h"
+#include "../graph/handshake.h"
 #include "../graph/graph.h"
 
 #ifndef __gm__

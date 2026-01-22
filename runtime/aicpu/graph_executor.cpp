@@ -1,7 +1,7 @@
 #include "device_log.h"
 #include "../graph/graph.h"
-#include "../common/handshake.h"
-#include "../common/kernel_args.h"
+#include "../graph/handshake.h"
+#include "../graph/kernel_args.h"
 #include <cstdint>
 #include <cstdio>
 #include <sched.h>

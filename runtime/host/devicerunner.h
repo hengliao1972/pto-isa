@@ -18,8 +18,8 @@
 #include <string>
 #include <vector>
 #include <runtime/rt.h>
-#include "common/kernel_args.h"
-#include "common/handshake.h"
+#include "../graph/kernel_args.h"
+#include "../graph/handshake.h"
 #include "memoryallocator.h"
 
 // Forward declarations

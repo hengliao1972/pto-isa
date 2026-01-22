@@ -1,175 +1,264 @@
-# AICPU Kernel Example
+# PTO Runtime - Graph Execution Framework
 
-This example demonstrates how to create and launch an AICPU kernel using CANN runtime APIs. It shows the complete workflow from loading the kernel binary to executing it on the device.
+ARM64 runtime for executing task dependency graphs on Ascend devices with AICPU and AICore coordination.
 
-## Project Structure
+## Overview
+
+This runtime enables building and executing computational task graphs on Ascend devices. It provides:
+- Task dependency graph management
+- Device memory allocation and management
+- AICPU and AICore kernel coordination
+- Host-device data transfer
+- **Python bindings for easy integration**
+
+## Directory Structure
 
 ```
-03-aicpu-kernel/
-├── kernel/                          # AICPU kernel code
-│   ├── graph_executor.cpp           # Kernel implementation with entry points
-│   └── CMakeLists.txt               # Build configuration for kernel
-├── launcher.cpp                     # Host-side launcher
-├── CMakeLists.txt                   # Main build configuration
-└── README.md                        # This file
+runtime/
+├── graph/              # Task dependency graph (merged from graph + common)
+│   ├── graph.h/cpp         # Graph class implementation
+│   ├── handshake.h         # AICPU-AICore handshake protocol
+│   └── kernel_args.h       # Kernel argument structures
+├── host/               # Host-side runtime (NEW)
+│   ├── devicerunner.h/cpp  # Device execution interface
+│   └── memoryallocator.h/cpp # Memory management
+├── aicpu/              # AICPU kernel implementation
+│   ├── graph_executor.cpp  # Task scheduler for AICPU
+│   └── device_log.h/cpp    # Device logging utilities
+├── aicore/             # AICore kernel implementation
+│   └── kernel.cpp          # Task execution kernels (add, mul, etc.)
+├── python/             # Python bindings (NEW)
+│   ├── bindings.cpp        # pybind11 bindings
+│   ├── graphbuilder.py     # Python example
+│   ├── CMakeLists.txt      # Python module build config
+│   └── README.md           # Python API documentation
+├── graphbuilder.cpp    # C++ example application
+└── CMakeLists.txt      # Main build configuration
 ```
 
-## Components
+## Key Components
 
-### 1. Kernel Code (`kernel/graph_executor.cpp`)
+### Graph Class ([graph/](graph/))
+- Manages task dependency graphs with fixed-size arrays
+- Tracks task arguments, dependencies (fanin/fanout), and execution state
+- Provides topological ordering for execution
 
-The AICPU kernel implements three entry points that are called by the system's `libaicpu_extend_kernels.so`:
+### DeviceRunner ([host/devicerunner.h](host/devicerunner.h))
+- Singleton interface for device operations
+- Manages AICPU and AICore kernel launching
+- Handles memory allocation and data transfer
+- Coordinates graph execution workflow
 
-- **`StaticTileFwkBackendKernelServer`**: Static kernel server entry point
-- **`DynTileFwkBackendKernelServerInit`**: Dynamic kernel initialization entry point
-  - Called when launching `DynTileFwkKernelServerInit` kernel
-  - Saves the backend server SO file to device filesystem
-  - Loads and binds function names from the SO file
-- **`DynTileFwkBackendKernelServer`**: Dynamic kernel execution entry point
-  - Called when launching `DynTileFwkKernelServer` kernel
-  - Executes the main kernel logic
+### MemoryAllocator ([host/memoryallocator.h](host/memoryallocator.h))
+- Centralized device memory management
+- Automatic tracking of allocations
+- Prevents memory leaks with automatic cleanup
 
-### 2. Launcher (`launcher.cpp`)
+### AICPU Graph Executor ([aicpu/graph_executor.cpp](aicpu/graph_executor.cpp))
+- Task scheduler running on AICPU
+- Manages handshake protocol with AICore
+- Dispatches ready tasks to AICore cores
+- Implements task dependency resolution
 
-The launcher demonstrates the complete workflow:
-
-#### Data Structures
-
-- **`DeviceArgs`**: Contains device-side arguments including:
-  - `aicpuSoBin`: Device memory address of the backend server SO binary
-  - `aicpuSoLen`: Size of the SO binary
-
-- **`KernelArgs`**: Contains kernel arguments including:
-  - `deviceArgs`: Pointer to device memory containing `DeviceArgs`
-  - Methods:
-    - `InitDeviceArgs()`: Allocates device memory and copies `DeviceArgs` to device
-    - `FinalizeDeviceArgs()`: Frees device memory
-
-- **`AicpuSoInfo`**: Manages the backend server SO file:
-  - `Init()`: Loads SO file from disk and copies to device memory
-  - `Finalize()`: Frees device memory
-
-#### Workflow
-
-1. **Parse Arguments**: Parse device ID from command line (default: 0)
-2. **Initialize Device**: Set device and create stream
-3. **Load SO File**: Use `AicpuSoInfo::Init()` to load `libtilefwk_backend_server.so` to device memory
-4. **Prepare Arguments**: Create `DeviceArgs` with SO binary address and size
-5. **Initialize Kernel Args**: Use `KernelArgs::InitDeviceArgs()` to copy arguments to device
-6. **Launch Kernels**: Call `DeviceRunner::Run()` which:
-   - Launches `DynTileFwkKernelServerInit` kernel (initialization)
-   - Launches `DynTileFwkKernelServer` kernel (execution)
-   - Synchronizes the stream
-7. **Cleanup**: Free all allocated resources
+### AICore Kernels ([aicore/kernel.cpp](aicore/kernel.cpp))
+- Task execution on AICore using PTO ISA
+- Implements arithmetic operations (add, mul, etc.)
+- Polls handshake buffer for task assignments
 
 ## Building
 
+### Prerequisites
+
+- CMake 3.15+
+- CANN toolkit (Ascend runtime)
+- GCC/G++ with C++17 support
+- **Python 3 with development headers (for Python bindings)**
+- **pybind11 (automatically fetched if not available)**
+
+### Environment Setup
+
 ```bash
-mkdir build
-cd build
+export ASCEND_HOME_PATH=/usr/local/Ascend/ascend-toolkit/latest
+```
+
+### Build C++ Components
+
+```bash
+cd runtime
+mkdir -p build && cd build
 cmake ..
 make
 ```
 
-This will generate:
-- `kernel/libtilefwk_backend_server.so`: The AICPU backend server binary (kernel implementation)
-- `launcher`: The host-side launcher executable
+This produces:
+- `graph_executor` - C++ example executable
+- `aicpu/libaicpu_graph_kernel.so` - AICPU kernel library
+- `aicore/kernel.o` - AICore kernel binary
+
+### Build Python Bindings
+
+```bash
+cd runtime
+mkdir -p build && cd build
+cmake .. -DBUILD_PYTHON_BINDINGS=ON
+make
+```
+
+This additionally builds:
+- `python/pto_runtime.so` - Python module
+
+To disable Python bindings:
+```bash
+cmake .. -DBUILD_PYTHON_BINDINGS=OFF
+```
 
 ## Usage
 
+### C++ Example
+
 ```bash
-./launcher [device_id]
+cd runtime/build
+./graph_executor 9  # Run on device 9
 ```
 
-Where `device_id` is an optional device ID (0-15). If not provided, defaults to 0.
+Expected output:
+```
+=== Graph Builder Example ===
+...
+✓ SUCCESS: All 16384 elements are correct (42.0)
+Formula verified: (a + b + 1)(a + b + 2) = (2+3+1)*(2+3+2) = 42
+```
 
-Examples:
+### Python Example
+
+See [python/README.md](python/README.md) for detailed Python API documentation.
+
 ```bash
-./launcher        # Uses device 0 (default)
-./launcher 0      # Uses device 0
-./launcher 6      # Uses device 6
+cd runtime/build/python
+export PYTHONPATH=$(pwd):$PYTHONPATH
+python3 ../../python/graphbuilder.py 9
 ```
 
-The launcher will:
-1. Parse device ID from command line (default: 0)
-2. Set the device
-3. Create a stream
-4. Load the backend server SO file
-5. Initialize kernel arguments
-6. Launch the init and main kernels
-7. Clean up resources
+Quick Python example:
+```python
+import numpy as np
+import pto_runtime
 
-## Logging
+# Initialize device
+runner = pto_runtime.DeviceRunner.get()
+runner.init(9, 3, "./aicpu/libaicpu_graph_kernel.so", "./aicore/kernel.o")
 
-The kernel uses PLOG (Platform Log) for device-side logging. Log files are written to:
+# Allocate tensors
+dev_a = runner.allocate_tensor(128 * 128 * 4)
+dev_b = runner.allocate_tensor(128 * 128 * 4)
+dev_c = runner.allocate_tensor(128 * 128 * 4)
 
+# Copy data
+a = np.full((128, 128), 2.0, dtype=np.float32)
+b = np.full((128, 128), 3.0, dtype=np.float32)
+runner.copy_to_device(dev_a, a)
+runner.copy_to_device(dev_b, b)
+
+# Build and run graph
+graph = pto_runtime.Graph()
+t0 = graph.add_task([dev_a, dev_b, dev_c, 128*128], func_id=0)
+runner.run(graph)
+
+# Get results
+result = np.zeros((128, 128), dtype=np.float32)
+runner.copy_from_device(result, dev_c)
+
+# Cleanup
+runner.free_tensor(dev_a)
+runner.free_tensor(dev_b)
+runner.free_tensor(dev_c)
+runner.finalize()
 ```
-~/ascend/log/debug/device-<device_id>/
-```
 
-Where `<device_id>` is the device ID used when launching the kernel. For example:
-- Device 0: `~/ascend/log/debug/device-0/`
-- Device 6: `~/ascend/log/debug/device-6/`
-
-The kernel logs messages using `DEV_INFO`, `DEV_DEBUG`, `DEV_WARN`, and `DEV_ERROR` macros defined in `kernel/device_log.h`. These logs are written to the device log files and can be viewed to debug kernel execution.
-
-## Key Concepts
-
-### Offset Requirements
-
-The structure layouts are critical because offsets are hardcoded in the AICPU kernel (`libaicpu_extend_kernels.so`):
-
-1. **Offset from `KernelArgs` to `deviceArgs` pointer**: Must match the expected offset
-2. **Offset from `DeviceArgs` to `aicpuSoBin`**: Must match the expected offset
-3. **Offset from `DeviceArgs` to `aicpuSoLen`**: Must match the expected offset
-
-### Function Name Mapping
-
-The system kernel (`libaicpu_extend_kernels.so`) calls functions in our backend server SO:
-
-| System Kernel Name | Backend Function Name |
-|-------------------|----------------------|
-| `DynTileFwkKernelServerInit` | `DynTileFwkBackendKernelServerInit` |
-| `DynTileFwkKernelServer` | `DynTileFwkBackendKernelServer` |
-| `StaticTileFwkKernelServer` | `StaticTileFwkBackendKernelServer` |
+## Architecture
 
 ### Execution Flow
 
 ```
-Host Side:
-  1. Load libtilefwk_backend_server.so to device memory
-  2. Create DeviceArgs with SO binary address
-  3. Launch DynTileFwkKernelServerInit kernel
+1. Host (graphbuilder.cpp or Python):
+   ├─ Build task graph (Graph class)
+   ├─ Allocate device memory (DeviceRunner)
+   ├─ Copy input data to device
+   └─ Call DeviceRunner::Run(graph)
 
-Device Side (libaicpu_extend_kernels.so):
-  1. Receives KernelArgs containing DeviceArgs pointer
-  2. Reads DeviceArgs from device memory
-  3. Saves SO binary to device filesystem
-  4. Loads SO file using dlopen()
-  5. Calls DynTileFwkBackendKernelServerInit()
+2. DeviceRunner::Run():
+   ├─ Copy graph to device memory
+   ├─ Launch AICPU init kernel (handshake)
+   ├─ Launch AICPU main kernel (scheduler)
+   ├─ Launch AICore kernel (workers)
+   └─ Synchronize streams
 
-Host Side:
-  1. Launch DynTileFwkKernelServer kernel
+3. AICPU (graph_executor.cpp):
+   ├─ Handshake with AICore cores
+   ├─ Find initially ready tasks (fanin=0)
+   ├─ Dispatch tasks to idle AICore cores
+   ├─ Wait for task completion
+   ├─ Update fanin counters
+   └─ Repeat until all tasks done
 
-Device Side:
-  1. Calls DynTileFwkBackendKernelServer() from loaded SO
-  2. Executes kernel logic
+4. AICore (kernel.cpp):
+   ├─ Wait for task assignment
+   ├─ Read task arguments
+   ├─ Execute kernel (add/mul/etc.)
+   ├─ Signal completion
+   └─ Repeat until quit signal
 ```
 
-## Error Handling
+### Handshake Protocol
 
-The code includes comprehensive error handling:
-- Device initialization failures
-- Memory allocation failures
-- SO file loading failures
-- Kernel launch failures
-- Stream synchronization failures
+Each AICore core has a dedicated handshake buffer:
 
-All errors are reported with descriptive messages and proper cleanup is performed.
+```c
+struct Handshake {
+    volatile uint32_t aicpu_ready;  // AICPU→AICore: scheduler ready
+    volatile uint32_t aicore_done;  // AICore→AICPU: core ready
+    volatile uint64_t task;         // AICPU→AICore: task pointer
+    volatile int32_t task_status;   // Task state: 1=busy, 0=done
+    volatile int32_t control;       // AICPU→AICore: 1=quit
+};
+```
+
+## Recent Changes
+
+### Reorganization (Current)
+
+1. **Merged `graph/` and `common/`**
+   - Moved `handshake.h` and `kernel_args.h` from `common/` to `graph/`
+   - All shared structures now in one location
+   - Simplified include paths
+
+2. **Created `host/` directory**
+   - Moved `devicerunner.cpp/h` and `memoryallocator.cpp/h`
+   - Separates host-side runtime from device kernels
+   - Clearer organization
+
+3. **Added Python bindings**
+   - New `python/` directory with pybind11 bindings
+   - Python API matches C++ interface
+   - NumPy integration for efficient data transfer
+   - Example Python application (`graphbuilder.py`)
+
+## Logging
+
+Device logs are written to `~/ascend/log/debug/device-<id>/`
+
+Kernel uses `DEV_INFO`, `DEV_DEBUG`, `DEV_WARN`, `DEV_ERROR` macros.
 
 ## Notes
 
-- The module ID for `rtMalloc` is set to 0 (works but reason unknown)
-- Device ID can be specified via command-line argument (default: 0, valid range: 0-15)
-- The `launchAicpuNum` parameter controls how many AICPU cores are used for the main kernel (default: 1)
-- The init kernel always uses 1 AICPU core
+- Device ID range: 0-15
+- Default device: 9
+- Graph supports up to 1024 tasks (configurable via `GRAPH_MAX_TASKS`)
+- Memory allocator automatically tracks and frees allocations
+- Python bindings require NumPy for array operations
+
+## References
+
+- See [graph/README.md](graph/README.md) for Graph class details
+- See [python/README.md](python/README.md) for Python API documentation
+- See example: [graphbuilder.cpp](graphbuilder.cpp) or [python/graphbuilder.py](python/graphbuilder.py)
