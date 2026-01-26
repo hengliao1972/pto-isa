@@ -18,6 +18,10 @@ venv/
 examples/output_ascend_a2a3/
 examples/output_ascend_a5/
 
+# Generated example outputs (per-example output folders)
+examples/*/output/
+*.so
+
 # Ascend simulator debug dumps
 core*_*.dump
 profile_*_log*.toml
