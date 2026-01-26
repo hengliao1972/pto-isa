@@ -16,12 +16,23 @@ namespace py = pybind11;
 PYBIND11_MODULE(pto_runtime, m) {
     m.doc() = "PTO Runtime - Graph building and device execution for Ascend devices";
 
+    py::class_<TaskProfileRecord>(m, "TaskProfileRecord")
+        .def_readonly("task_id", &TaskProfileRecord::task_id)
+        .def_readonly("func_id", &TaskProfileRecord::func_id)
+        .def_readonly("core_type", &TaskProfileRecord::core_type)
+        .def_readonly("exec_core_id", &TaskProfileRecord::exec_core_id)
+        .def_readonly("exec_core_type", &TaskProfileRecord::exec_core_type)
+        .def_readonly("exec_phys_core_id", &TaskProfileRecord::exec_phys_core_id)
+        .def_readonly("start_time", &TaskProfileRecord::start_time)
+        .def_readonly("end_time", &TaskProfileRecord::end_time)
+        .def_readonly("pmu_cnt", &TaskProfileRecord::pmu_cnt);
+
     // Bind Graph class
     py::class_<Graph>(m, "Graph")
         .def(py::init<>(), "Create a new empty graph")
 
         .def("add_task",
-            [](Graph& self, py::list args, int func_id) {
+            [](Graph& self, py::list args, int func_id, int core_type) {
                 // Convert Python list to uint64_t array
                 std::vector<uint64_t> args_vec;
                 for (auto item : args) {
@@ -37,13 +48,14 @@ PYBIND11_MODULE(pto_runtime, m) {
                         throw std::runtime_error("Task arguments must be integers or floats");
                     }
                 }
-                return self.add_task(args_vec.data(), args_vec.size(), func_id);
+                return self.add_task(args_vec.data(), args_vec.size(), func_id, core_type);
             },
-            py::arg("args"), py::arg("func_id"),
+            py::arg("args"), py::arg("func_id"), py::arg("core_type") = 1,
             "Add a task to the graph with the given arguments and function ID.\n"
             "Args:\n"
             "    args: List of arguments (integers or floats)\n"
             "    func_id: Function identifier\n"
+            "    core_type: 1=AIC (cube), 2=AIV (vector), 0=any\n"
             "Returns:\n"
             "    Task ID (integer)")
 
@@ -73,7 +85,7 @@ PYBIND11_MODULE(pto_runtime, m) {
             "Initialize the device and runtime resources.\n"
             "Args:\n"
             "    device_id: Device ID (0-15)\n"
-            "    num_cores: Number of cores for handshake (e.g., 3 for 1c2v)\n"
+            "    num_cores: Number of cube (AIC) blocks to launch (e.g., 24 on A3). Vector (AIV) subblocks are derived.\n"
             "    aicpu_so_path: Path to AICPU shared object\n"
             "    aicore_kernel_path: Path to AICore kernel binary (optional)\n"
             "Returns:\n"
@@ -111,9 +123,9 @@ PYBIND11_MODULE(pto_runtime, m) {
             "    ptr: Device pointer (as integer)")
 
         .def("copy_to_device",
-            [](DeviceRunner& self, uintptr_t dev_ptr, py::array_t<float> host_data) {
+            [](DeviceRunner& self, uintptr_t dev_ptr, py::array host_data) {
                 py::buffer_info buf = host_data.request();
-                size_t bytes = buf.size * sizeof(float);
+                size_t bytes = static_cast<size_t>(buf.size) * static_cast<size_t>(buf.itemsize);
                 return self.CopyToDevice(reinterpret_cast<void*>(dev_ptr),
                                         buf.ptr, bytes);
             },
@@ -121,21 +133,21 @@ PYBIND11_MODULE(pto_runtime, m) {
             "Copy data from host numpy array to device.\n"
             "Args:\n"
             "    dev_ptr: Device pointer (as integer)\n"
-            "    host_data: NumPy array (float32)\n"
+            "    host_data: NumPy array (any dtype; raw bytes copied)\n"
             "Returns:\n"
             "    0 on success, error code on failure")
 
         .def("copy_from_device",
-            [](DeviceRunner& self, py::array_t<float> host_data, uintptr_t dev_ptr) {
+            [](DeviceRunner& self, py::array host_data, uintptr_t dev_ptr) {
                 py::buffer_info buf = host_data.request();
-                size_t bytes = buf.size * sizeof(float);
+                size_t bytes = static_cast<size_t>(buf.size) * static_cast<size_t>(buf.itemsize);
                 return self.CopyFromDevice(buf.ptr,
                                           reinterpret_cast<void*>(dev_ptr), bytes);
             },
             py::arg("host_data"), py::arg("dev_ptr"),
             "Copy data from device to host numpy array.\n"
             "Args:\n"
-            "    host_data: NumPy array (float32) to store results\n"
+            "    host_data: NumPy array to store results (any dtype; raw bytes copied)\n"
             "    dev_ptr: Device pointer (as integer)\n"
             "Returns:\n"
             "    0 on success, error code on failure")
@@ -145,6 +157,46 @@ PYBIND11_MODULE(pto_runtime, m) {
             "Execute a graph on the device.\n"
             "Args:\n"
             "    graph: Graph object to execute\n"
+            "    launch_aicpu_num: Number of AICPU instances\n"
+            "Returns:\n"
+            "    0 on success, error code on failure")
+
+        .def("set_profile_enabled", &DeviceRunner::SetProfileEnabled, py::arg("enabled"),
+            "Enable/disable profile collection (graph copy-back) for subsequent runs.")
+
+        .def("profile_enabled", &DeviceRunner::ProfileEnabled,
+            "Return True if profile collection is enabled.")
+
+        .def("has_last_profile", &DeviceRunner::HasLastProfile,
+            "Return True if profiling data from the last run is available.")
+
+        .def("get_last_profile", &DeviceRunner::GetLastProfile,
+            "Get per-task profiling records from the last run.\n"
+            "Returns:\n"
+            "    List[TaskProfileRecord]")
+
+        .def("run_task",
+            [](DeviceRunner& self, py::list args, int func_id, int launch_aicpu_num = 1) {
+                std::vector<uint64_t> args_vec;
+                for (auto item : args) {
+                    if (py::isinstance<py::int_>(item)) {
+                        args_vec.push_back(item.cast<uint64_t>());
+                    } else if (py::isinstance<py::float_>(item)) {
+                        float f = item.cast<float>();
+                        union { float f32; uint64_t u64; } converter;
+                        converter.f32 = f;
+                        args_vec.push_back(converter.u64);
+                    } else {
+                        throw std::runtime_error("Task arguments must be integers or floats");
+                    }
+                }
+                return self.RunTask(args_vec, func_id, launch_aicpu_num);
+            },
+            py::arg("args"), py::arg("func_id"), py::arg("launch_aicpu_num") = 1,
+            "Execute a single task on the device.\n"
+            "Args:\n"
+            "    args: List of arguments (integers or floats)\n"
+            "    func_id: Function identifier\n"
             "    launch_aicpu_num: Number of AICPU instances\n"
             "Returns:\n"
             "    0 on success, error code on failure")

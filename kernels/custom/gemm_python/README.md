@@ -9,11 +9,8 @@ It is intentionally small (16×16) and focuses on the end-to-end flow.
 
 ## Prereqs
 
-- Build `ptoas` first:
-
-```bash
-ninja -C ptoas/mlir/build
-```
+- Ensure `ptoas` is available for your platform:
+  - `./bin/ptoas` should work (see `bin/README.md`).
 
 - For NPU: source Ascend env and ensure `ASCEND_HOME_PATH` is set:
 

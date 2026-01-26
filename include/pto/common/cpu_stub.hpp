@@ -105,4 +105,8 @@ __attribute__((weak, visibility("default"))) uint32_t pto_cpu_block_num = 1;
 static inline uint32_t get_block_idx() { return pto_cpu_block_idx; }
 static inline uint32_t get_block_num() { return pto_cpu_block_num; }
 
+// PTO-AS `pto.get_task_id` compatibility:
+// In the CPU simulator, treat "task id" as the current logical block index.
+#define GET_TASK_ID(var) int64_t var = static_cast<int64_t>(get_block_idx())
+
 #endif

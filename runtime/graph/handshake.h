@@ -39,13 +39,20 @@ extern "C" {
  * - task_status: Written by both (AICPU=1 on dispatch, AICore=0 on completion)
  * - control: Written by AICPU, read by AICore (0 = continue, 1 = quit)
  */
-struct Handshake {
-    volatile uint32_t aicpu_ready;   // AICPU ready signal: 0=not ready, 1=ready
-    volatile uint32_t aicore_done;   // AICore ready signal: 0=not ready, core_id+1=ready
-    volatile uint64_t task;          // Task pointer: 0=no task, non-zero=Task* address
-    volatile int32_t task_status;    // Task execution status: 0=idle, 1=busy
-    volatile int32_t control;        // Control signal: 0=execute, 1=quit
-} __attribute__((aligned(64)));
+	struct Handshake {
+	    volatile uint32_t aicpu_ready;   // AICPU ready signal: 0=not ready, 1=ready
+	    volatile uint32_t aicore_done;   // AICore ready signal: 0=not ready, core_id+1=ready
+	    volatile uint64_t task;          // Task pointer: 0=no task, non-zero=Task* address
+	    volatile int32_t task_status;    // Task execution status: 0=idle, 1=busy
+	    volatile int32_t control;        // Control signal: 0=execute, 1=quit
+	    volatile uint32_t profile_enable; // 0=disable per-task profiling, 1=enable
+	} __attribute__((aligned(64)));
+
+#if defined(__cplusplus)
+	static_assert(sizeof(Handshake) == 64, "Handshake must be exactly one cache line (64B)");
+#else
+	_Static_assert(sizeof(struct Handshake) == 64, "Handshake must be exactly one cache line (64B)");
+#endif
 
 #ifdef __cplusplus
 }

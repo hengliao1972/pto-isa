@@ -38,75 +38,6 @@ static int ReadFile(const std::string &path, std::vector<uint8_t> &buf) {
 }
 
 // =============================================================================
-// KernelArgsHelper Implementation
-// =============================================================================
-
-int KernelArgsHelper::InitDeviceArgs(const DeviceArgs &hostDeviceArgs, MemoryAllocator& allocator) {
-    allocator_ = &allocator;
-
-    // Allocate device memory for deviceArgs
-    if (args.deviceArgs == nullptr) {
-        uint64_t deviceArgsSize = sizeof(DeviceArgs);
-        void* deviceArgsDev = allocator_->Alloc(deviceArgsSize);
-        if (deviceArgsDev == nullptr) {
-            std::cerr << "Error: Alloc for deviceArgs failed\n";
-            return -1;
-        }
-        args.deviceArgs = reinterpret_cast<int64_t *>(deviceArgsDev);
-    }
-    // Copy hostDeviceArgs to device memory via deviceArgs
-    int rc =
-        rtMemcpy(args.deviceArgs, sizeof(DeviceArgs), &hostDeviceArgs, sizeof(DeviceArgs), RT_MEMCPY_HOST_TO_DEVICE);
-    if (rc != 0) {
-        std::cerr << "Error: rtMemcpy failed: " << rc << '\n';
-        allocator_->Free(args.deviceArgs);
-        args.deviceArgs = nullptr;
-        return rc;
-    }
-    return 0;
-}
-
-int KernelArgsHelper::FinalizeDeviceArgs() {
-    if (args.deviceArgs != nullptr && allocator_ != nullptr) {
-        int rc = allocator_->Free(args.deviceArgs);
-        args.deviceArgs = nullptr;
-        return rc;
-    }
-    return 0;
-}
-
-int KernelArgsHelper::InitGraphArgs(const Graph& hostGraph, MemoryAllocator& allocator) {
-    allocator_ = &allocator;
-
-    if (args.graphArgs == nullptr) {
-        uint64_t graphSize = sizeof(Graph);
-        void* graphDev = allocator_->Alloc(graphSize);
-        if (graphDev == nullptr) {
-            std::cerr << "Error: Alloc for graphArgs failed\n";
-            return -1;
-        }
-        args.graphArgs = reinterpret_cast<Graph*>(graphDev);
-    }
-    int rc = rtMemcpy(args.graphArgs, sizeof(Graph), &hostGraph, sizeof(Graph), RT_MEMCPY_HOST_TO_DEVICE);
-    if (rc != 0) {
-        std::cerr << "Error: rtMemcpy for graph failed: " << rc << '\n';
-        allocator_->Free(args.graphArgs);
-        args.graphArgs = nullptr;
-        return rc;
-    }
-    return 0;
-}
-
-int KernelArgsHelper::FinalizeGraphArgs() {
-    if (args.graphArgs != nullptr && allocator_ != nullptr) {
-        int rc = allocator_->Free(args.graphArgs);
-        args.graphArgs = nullptr;
-        return rc;
-    }
-    return 0;
-}
-
-// =============================================================================
 // AicpuSoInfo Implementation
 // =============================================================================
 
@@ -170,6 +101,10 @@ int DeviceRunner::Init(int deviceId, int numCores, const std::string &aicpuSoPat
 
     deviceId_ = deviceId;
     numCores_ = numCores;
+    // A2/A3 mix kernels launch 1 cube block + 2 vector subblocks per cube block.
+    // The runtime handshake must cover *all* workers (AIC + AIV), otherwise the extra AIV workers will spin forever.
+    constexpr int kAivPerAic = 2;
+    totalCores_ = numCores_ * (kAivPerAic + 1);
     aicoreKernelPath_ = aicoreKernelPath;
 
     // Set device
@@ -212,36 +147,22 @@ int DeviceRunner::Init(int deviceId, int numCores, const std::string &aicpuSoPat
         return rc;
     }
 
-    // Initialize device args
-    deviceArgs_.aicpuSoBin = soInfo_.aicpuSoBin;
-    deviceArgs_.aicpuSoLen = soInfo_.aicpuSoLen;
-    rc = kernelArgs_.InitDeviceArgs(deviceArgs_, memAlloc_);
-    if (rc != 0) {
-        std::cerr << "Error: InitDeviceArgs failed: " << rc << '\n';
-        soInfo_.Finalize();
-        rtStreamDestroy(streamAicpu_);
-        rtStreamDestroy(streamAicore_);
-        streamAicpu_ = nullptr;
-        streamAicore_ = nullptr;
-        return rc;
-    }
-
     // Initialize handshake buffers
-    hankArgs_.resize(numCores);
-    for (int i = 0; i < numCores; i++) {
+    hankArgs_.resize(totalCores_);
+    for (int i = 0; i < totalCores_; i++) {
         hankArgs_[i].aicpu_ready = 0;
         hankArgs_[i].aicore_done = 0;
         hankArgs_[i].control = 0;
         hankArgs_[i].task = 0;
         hankArgs_[i].task_status = 0;
+        hankArgs_[i].profile_enable = 0;
     }
 
     // Allocate and copy handshake to device
-    size_t total_size = sizeof(Handshake) * numCores;
-    void *hankDev = memAlloc_.Alloc(total_size);
-    if (hankDev == nullptr) {
+    size_t total_size = sizeof(Handshake) * totalCores_;
+    void *hankDevRaw = memAlloc_.Alloc(total_size);
+    if (hankDevRaw == nullptr) {
         std::cerr << "Error: Alloc for handshake failed\n";
-        kernelArgs_.FinalizeDeviceArgs();
         soInfo_.Finalize();
         rtStreamDestroy(streamAicpu_);
         rtStreamDestroy(streamAicore_);
@@ -249,12 +170,13 @@ int DeviceRunner::Init(int deviceId, int numCores, const std::string &aicpuSoPat
         streamAicore_ = nullptr;
         return -1;
     }
+    hankDev_ = reinterpret_cast<Handshake *>(hankDevRaw);
 
-    rc = rtMemcpy(hankDev, total_size, hankArgs_.data(), total_size, RT_MEMCPY_HOST_TO_DEVICE);
+    rc = rtMemcpy(hankDev_, total_size, hankArgs_.data(), total_size, RT_MEMCPY_HOST_TO_DEVICE);
     if (rc != 0) {
         std::cerr << "Error: rtMemcpy for handshake failed: " << rc << '\n';
-        memAlloc_.Free(hankDev);
-        kernelArgs_.FinalizeDeviceArgs();
+        memAlloc_.Free(hankDev_);
+        hankDev_ = nullptr;
         soInfo_.Finalize();
         rtStreamDestroy(streamAicpu_);
         rtStreamDestroy(streamAicore_);
@@ -263,8 +185,73 @@ int DeviceRunner::Init(int deviceId, int numCores, const std::string &aicpuSoPat
         return rc;
     }
 
-    kernelArgs_.args.hankArgs = reinterpret_cast<int64_t *>(hankDev);
-    kernelArgs_.args.core_num = numCores;
+    // Allocate and initialize the runtime mailbox (DeviceArgs.opaque).
+    void *rtArgsDevRaw = memAlloc_.Alloc(sizeof(PtoRuntimeArgs));
+    if (rtArgsDevRaw == nullptr) {
+        std::cerr << "Error: Alloc for PtoRuntimeArgs failed\n";
+        soInfo_.Finalize();
+        rtStreamDestroy(streamAicpu_);
+        rtStreamDestroy(streamAicore_);
+        streamAicpu_ = nullptr;
+        streamAicore_ = nullptr;
+        return -1;
+    }
+    runtimeArgsDev_ = reinterpret_cast<PtoRuntimeArgs *>(rtArgsDevRaw);
+    runtimeArgsHost_.hankArgs = hankDev_;
+    runtimeArgsHost_.graphArgs = nullptr;
+    runtimeArgsHost_.core_num = totalCores_;
+    rc = rtMemcpy(runtimeArgsDev_, sizeof(PtoRuntimeArgs), &runtimeArgsHost_, sizeof(PtoRuntimeArgs),
+                  RT_MEMCPY_HOST_TO_DEVICE);
+    if (rc != 0) {
+        std::cerr << "Error: rtMemcpy for PtoRuntimeArgs failed: " << rc << '\n';
+        soInfo_.Finalize();
+        rtStreamDestroy(streamAicpu_);
+        rtStreamDestroy(streamAicore_);
+        streamAicpu_ = nullptr;
+        streamAicore_ = nullptr;
+        return rc;
+    }
+
+    // Initialize cfgdata (DeviceArgs) consumed by DynTileFwkKernelServer*.
+    deviceArgs_ = DeviceArgs{};
+    deviceArgs_.nrAic = static_cast<uint32_t>(numCores_);
+    deviceArgs_.nrAiv = static_cast<uint32_t>(numCores_) * static_cast<uint32_t>(kAivPerAic);
+    deviceArgs_.nrAicpu = 1;
+    deviceArgs_.nrValidAic = static_cast<uint32_t>(numCores_);
+    deviceArgs_.opaque = reinterpret_cast<uint64_t>(runtimeArgsDev_);
+    deviceArgs_.aicpuSoBin = soInfo_.aicpuSoBin;
+    deviceArgs_.aicpuSoLen = soInfo_.aicpuSoLen;
+    deviceArgs_.deviceId = static_cast<uint64_t>(deviceId);
+    deviceArgs_.taskType = 0;
+    deviceArgs_.machineConfig = 0;
+    deviceArgs_.taskId = 0;
+    deviceArgs_.enableCtrl = 0;
+    deviceArgs_.validGetPgMask = 0;
+    deviceArgs_.disableSync = 0;
+
+    deviceArgsDev_ = memAlloc_.Alloc(sizeof(DeviceArgs));
+    if (deviceArgsDev_ == nullptr) {
+        std::cerr << "Error: Alloc for cfgdata(DeviceArgs) failed\n";
+        soInfo_.Finalize();
+        rtStreamDestroy(streamAicpu_);
+        rtStreamDestroy(streamAicore_);
+        streamAicpu_ = nullptr;
+        streamAicore_ = nullptr;
+        return -1;
+    }
+    rc = rtMemcpy(deviceArgsDev_, sizeof(DeviceArgs), &deviceArgs_, sizeof(DeviceArgs), RT_MEMCPY_HOST_TO_DEVICE);
+    if (rc != 0) {
+        std::cerr << "Error: rtMemcpy for cfgdata(DeviceArgs) failed: " << rc << '\n';
+        soInfo_.Finalize();
+        rtStreamDestroy(streamAicpu_);
+        rtStreamDestroy(streamAicore_);
+        streamAicpu_ = nullptr;
+        streamAicore_ = nullptr;
+        return rc;
+    }
+
+    kernelArgs_ = DeviceKernelArgs{};
+    kernelArgs_.cfgdata = reinterpret_cast<int64_t *>(deviceArgsDev_);
 
     // NOTE: Kernel registration and loading moved to runtime compilation
     // Users should call CompileAndLoadKernel() after Init() to compile and load kernels
@@ -274,7 +261,8 @@ int DeviceRunner::Init(int deviceId, int numCores, const std::string &aicpuSoPat
     //   runner.CompileAndLoadKernel(2, "./aicore/kernels/kernel_mul.cpp", ptoIsaRoot);
 
     initialized_ = true;
-    std::cout << "DeviceRunner initialized: device=" << deviceId << ", cores=" << numCores << '\n';
+    std::cout << "DeviceRunner initialized: device=" << deviceId << ", aic_blocks=" << numCores_ << ", workers="
+              << totalCores_ << '\n';
     return 0;
 }
 
@@ -315,72 +303,182 @@ int DeviceRunner::Run(const Graph& graph, int launchAicpuNum) {
         return -1;
     }
 
+    // Reset handshake state for this run (enables multiple sequential Run() calls).
+    for (int i = 0; i < totalCores_; i++) {
+        hankArgs_[i].aicpu_ready = 0;
+        hankArgs_[i].aicore_done = 0;
+        hankArgs_[i].control = 0;
+        hankArgs_[i].task = 0;
+        hankArgs_[i].task_status = 0;
+        hankArgs_[i].profile_enable = enableProfile_ ? 1U : 0U;
+    }
+    {
+        const size_t bytes = sizeof(Handshake) * static_cast<size_t>(totalCores_);
+        int rc = rtMemcpy(hankDev_, bytes, hankArgs_.data(), bytes, RT_MEMCPY_HOST_TO_DEVICE);
+        if (rc != 0) {
+            std::cerr << "Error: rtMemcpy for handshake reset failed: " << rc << '\n';
+            return rc;
+        }
+    }
+
     // Create a mutable copy of the graph to set functionBinAddr
     Graph mutableGraph = graph;
 
     // Set functionBinAddr for all tasks (NEW - Runtime function pointer dispatch)
-    std::cout << "\n=== Setting functionBinAddr for Tasks ===" << '\n';
+    std::cout << "\n=== Setting functionBinAddr for Tasks ===" << std::endl;
     for (int i = 0; i < mutableGraph.get_task_count(); i++) {
         Task* task = mutableGraph.get_task(i);
         if (task != nullptr) {
             uint64_t addr = GetFunctionBinAddr(task->func_id);
             task->functionBinAddr = addr;
             std::cout << "  Task " << i << " (func_id=" << task->func_id
-                      << ") -> functionBinAddr=0x" << std::hex << addr << std::dec << '\n';
+                      << ") -> functionBinAddr=0x" << std::hex << addr << std::dec << std::endl;
         }
     }
-    std::cout << '\n';
+    std::cout << std::endl;
 
-    // Initialize graph args
-    int rc = kernelArgs_.InitGraphArgs(mutableGraph, memAlloc_);
+    // Copy graph to device memory and update the runtime mailbox.
+    void* graphDevRaw = memAlloc_.Alloc(sizeof(Graph));
+    if (graphDevRaw == nullptr) {
+        std::cerr << "Error: Alloc for graphArgs failed\n";
+        return -1;
+    }
+    auto* graphDev = reinterpret_cast<Graph*>(graphDevRaw);
+
+    int rc = rtMemcpy(graphDev, sizeof(Graph), &mutableGraph, sizeof(Graph), RT_MEMCPY_HOST_TO_DEVICE);
     if (rc != 0) {
-        std::cerr << "Error: InitGraphArgs failed: " << rc << '\n';
+        std::cerr << "Error: rtMemcpy for graph failed: " << rc << '\n';
+        memAlloc_.Free(graphDev);
+        return rc;
+    }
+
+    runtimeArgsHost_.hankArgs = hankDev_;
+    runtimeArgsHost_.graphArgs = graphDev;
+    runtimeArgsHost_.core_num = totalCores_;
+    rc = rtMemcpy(runtimeArgsDev_, sizeof(PtoRuntimeArgs), &runtimeArgsHost_, sizeof(PtoRuntimeArgs),
+                  RT_MEMCPY_HOST_TO_DEVICE);
+    if (rc != 0) {
+        std::cerr << "Error: rtMemcpy for PtoRuntimeArgs failed: " << rc << '\n';
+        memAlloc_.Free(graphDev);
         return rc;
     }
 
     // Launch AICPU init kernel
-    rc = LaunchAiCpuKernel(streamAicpu_, &kernelArgs_.args, "DynTileFwkKernelServerInit", 1);
+    rc = LaunchAiCpuKernel(streamAicpu_, &kernelArgs_, "DynTileFwkKernelServerInit", 1);
     if (rc != 0) {
         std::cerr << "Error: LaunchAiCpuKernel (init) failed: " << rc << '\n';
-        kernelArgs_.FinalizeGraphArgs();
+        memAlloc_.Free(graphDev);
         return rc;
     }
 
     // Launch AICPU main kernel
-    rc = LaunchAiCpuKernel(streamAicpu_, &kernelArgs_.args, "DynTileFwkKernelServer", launchAicpuNum);
+    rc = LaunchAiCpuKernel(streamAicpu_, &kernelArgs_, "DynTileFwkKernelServer", launchAicpuNum);
     if (rc != 0) {
         std::cerr << "Error: LaunchAiCpuKernel (main) failed: " << rc << '\n';
-        kernelArgs_.FinalizeGraphArgs();
+        memAlloc_.Free(graphDev);
         return rc;
     }
 
     // Launch AICore kernel
-    rc = LauncherAicoreKernel(streamAicore_, &kernelArgs_.args);
+    rc = LauncherAicoreKernel(streamAicore_, hankDev_);
     if (rc != 0) {
         std::cerr << "Error: LauncherAicoreKernel failed: " << rc << '\n';
-        kernelArgs_.FinalizeGraphArgs();
+        memAlloc_.Free(graphDev);
         return rc;
     }
 
     // Synchronize streams
+    std::cout << "Synchronizing AICPU stream..." << std::endl;
     rc = rtStreamSynchronize(streamAicpu_);
     if (rc != 0) {
         std::cerr << "Error: rtStreamSynchronize (AICPU) failed: " << rc << '\n';
-        kernelArgs_.FinalizeGraphArgs();
+        memAlloc_.Free(graphDev);
         return rc;
     }
+    std::cout << "AICPU stream done" << std::endl;
 
+    std::cout << "Synchronizing AICore stream..." << std::endl;
     rc = rtStreamSynchronize(streamAicore_);
     if (rc != 0) {
         std::cerr << "Error: rtStreamSynchronize (AICore) failed: " << rc << '\n';
-        kernelArgs_.FinalizeGraphArgs();
+        memAlloc_.Free(graphDev);
         return rc;
+    }
+    std::cout << "AICore stream done" << std::endl;
+
+    // Copy graph back for profiling (task start/end, core id, etc).
+    hasLastGraph_ = false;
+    if (enableProfile_) {
+        rc = rtMemcpy(&lastGraph_, sizeof(Graph), graphDev, sizeof(Graph), RT_MEMCPY_DEVICE_TO_HOST);
+        if (rc != 0) {
+            std::cerr << "Warning: rtMemcpy for graph (device->host) failed: " << rc << '\n';
+        } else {
+            hasLastGraph_ = true;
+        }
     }
 
     // Cleanup graph args
-    kernelArgs_.FinalizeGraphArgs();
+    memAlloc_.Free(graphDev);
 
     return 0;
+}
+
+void DeviceRunner::SetProfileEnabled(bool enabled) {
+    enableProfile_ = enabled;
+    if (!enableProfile_) {
+        hasLastGraph_ = false;
+    }
+}
+
+bool DeviceRunner::ProfileEnabled() const {
+    return enableProfile_;
+}
+
+bool DeviceRunner::HasLastProfile() const {
+    return hasLastGraph_;
+}
+
+std::vector<TaskProfileRecord> DeviceRunner::GetLastProfile() const {
+    std::vector<TaskProfileRecord> out;
+    if (!hasLastGraph_) {
+        return out;
+    }
+    const int taskCount = lastGraph_.get_task_count();
+    if (taskCount <= 0) {
+        return out;
+    }
+    out.reserve(static_cast<size_t>(taskCount));
+    for (int i = 0; i < taskCount; i++) {
+        const Task* t = lastGraph_.get_task(i);
+        if (t == nullptr) {
+            continue;
+        }
+        TaskProfileRecord rec;
+        rec.task_id = t->task_id;
+        rec.func_id = t->func_id;
+        rec.core_type = t->core_type;
+        rec.exec_core_id = t->profile.exec_core_id;
+        rec.exec_core_type = t->profile.exec_core_type;
+        rec.exec_phys_core_id = t->profile.exec_phys_core_id;
+        rec.start_time = t->profile.start_time;
+        rec.end_time = t->profile.end_time;
+        for (size_t j = 0; j < rec.pmu_cnt.size(); j++) {
+            rec.pmu_cnt[j] = t->profile.pmu_cnt[j];
+        }
+        out.push_back(rec);
+    }
+    return out;
+}
+
+int DeviceRunner::RunTask(const std::vector<uint64_t>& args, int funcId, int launchAicpuNum) {
+    Graph graph;
+    std::vector<uint64_t> argsCopy = args;
+    int taskId = graph.add_task(argsCopy.data(), static_cast<int>(argsCopy.size()), funcId);
+    if (taskId < 0) {
+        std::cerr << "Error: Graph::add_task failed\n";
+        return -1;
+    }
+    return Run(graph, launchAicpuNum);
 }
 
 void DeviceRunner::PrintHandshakeResults() {
@@ -388,11 +486,11 @@ void DeviceRunner::PrintHandshakeResults() {
         return;
     }
 
-    size_t total_size = sizeof(Handshake) * numCores_;
-    rtMemcpy(hankArgs_.data(), total_size, kernelArgs_.args.hankArgs, total_size, RT_MEMCPY_DEVICE_TO_HOST);
+    size_t total_size = sizeof(Handshake) * totalCores_;
+    rtMemcpy(hankArgs_.data(), total_size, hankDev_, total_size, RT_MEMCPY_DEVICE_TO_HOST);
 
-    std::cout << "Handshake results for " << numCores_ << " cores:" << std::endl;
-    for (int i = 0; i < numCores_; i++) {
+    std::cout << "Handshake results for " << totalCores_ << " workers:" << std::endl;
+    for (int i = 0; i < totalCores_; i++) {
         std::cout << "  Core " << i << ": aicore_done=" << hankArgs_[i].aicore_done
                   << " aicpu_ready=" << hankArgs_[i].aicpu_ready
                   << " control=" << hankArgs_[i].control
@@ -404,9 +502,6 @@ int DeviceRunner::Finalize() {
     if (!initialized_) {
         return 0;
     }
-
-    // Cleanup kernel args (deviceArgs, graphArgs if any)
-    kernelArgs_.FinalizeDeviceArgs();
 
     // Cleanup AICPU SO
     soInfo_.Finalize();
@@ -436,16 +531,22 @@ int DeviceRunner::Finalize() {
     initialized_ = false;
     deviceId_ = -1;
     numCores_ = 0;
+    totalCores_ = 0;
     aicoreKernelPath_.clear();
-    hankArgs_.clear();
+	    hankArgs_.clear();
+	    deviceArgsDev_ = nullptr;
+    runtimeArgsDev_ = nullptr;
+    hankDev_ = nullptr;
+    hasLastGraph_ = false;
+    enableProfile_ = false;
 
     std::cout << "DeviceRunner finalized\n";
     return 0;
 }
 
-int DeviceRunner::LaunchAiCpuKernel(rtStream_t stream, KernelArgs *kArgs, const char *kernelName, int aicpuNum) {
+int DeviceRunner::LaunchAiCpuKernel(rtStream_t stream, DeviceKernelArgs *kArgs, const char *kernelName, int aicpuNum) {
     struct Args {
-        KernelArgs kArgs;
+        DeviceKernelArgs kArgs;
         char kernelName[32];
         const char soName[32] = {"libaicpu_extend_kernels.so"};
         const char opName[32] = {""};
@@ -466,7 +567,7 @@ int DeviceRunner::LaunchAiCpuKernel(rtStream_t stream, KernelArgs *kArgs, const 
                                          nullptr, stream, 0);
 }
 
-int DeviceRunner::LauncherAicoreKernel(rtStream_t stream, KernelArgs *kernelArgs) {
+int DeviceRunner::LauncherAicoreKernel(rtStream_t stream, Handshake* hankArgs) {
     const std::string binPath = aicoreKernelPath_;
     std::vector<uint8_t> bin;
     if (ReadFile(binPath, bin) != 0) {
@@ -490,9 +591,9 @@ int DeviceRunner::LauncherAicoreKernel(rtStream_t stream, KernelArgs *kernelArgs
     }
 
     struct Args {
-        int64_t *hankArgs;
+        Handshake* hankArgs;
     };
-    Args args = {kernelArgs->hankArgs};
+    Args args = {hankArgs};
     rtArgsEx_t rtArgs;
     std::memset(&rtArgs, 0, sizeof(rtArgs));
     rtArgs.args = &args;
@@ -501,7 +602,11 @@ int DeviceRunner::LauncherAicoreKernel(rtStream_t stream, KernelArgs *kernelArgs
     rtTaskCfgInfo_t cfg = {};
     cfg.schemMode = RT_SCHEM_MODE_BATCH;
 
-    rc = rtKernelLaunchWithHandleV2(binHandle, 0, 1, &rtArgs, nullptr, stream, &cfg);
+    uint32_t blockDim = static_cast<uint32_t>(numCores_);
+    if (blockDim == 0) {
+        blockDim = 1;
+    }
+    rc = rtKernelLaunchWithHandleV2(binHandle, 0, blockDim, &rtArgs, nullptr, stream, &cfg);
     if (rc != RT_ERROR_NONE) {
         std::cerr << "rtKernelLaunchWithHandleV2失败: " << rc << '\n';
         return rc;
@@ -740,5 +845,3 @@ int DeviceRunner::LoadSingleKernelToDevice(int funcId, const std::string& binPat
 
     return 0;
 }
-
-

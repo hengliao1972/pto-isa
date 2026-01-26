@@ -28,6 +28,7 @@ pybind11_add_module(pto_runtime bindings.cpp
 target_include_directories(pto_runtime PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${ASCEND_HOME_PATH}/include
+    ${ASCEND_HOME_PATH}/include/experiment/msprof
     ${ASCEND_HOME_PATH}/pkg_inc
     ${ASCEND_HOME_PATH}/pkg_inc/runtime
     ${ASCEND_HOME_PATH}/pkg_inc/profiling

@@ -6,7 +6,7 @@
  */
 
 #include "memoryallocator.h"
-#include <runtime/rt.h>
+#include <experiment/runtime/runtime/rt.h>
 #include <iostream>
 
 int MemoryAllocator::Init(int deviceId) {

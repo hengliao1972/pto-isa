@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pto_as import PTO
+from pto import PTO
 
 
 def neg16():

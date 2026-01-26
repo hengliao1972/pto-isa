@@ -15,87 +15,27 @@
 #define RUNTIME_DEVICERUNNER_H
 
 #include <cstdint>
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
-#include <runtime/rt.h>
-#include "../graph/kernel_args.h"
+#include <experiment/runtime/runtime/rt.h>
+#include "../graph/graph.h"
 #include "../graph/handshake.h"
+#include "../graph/kernel_args.h"
 #include "memoryallocator.h"
 #include "function_cache.h"
 
-// Forward declarations
-class Graph;
-
-/**
- * DeviceArgs structure for AICPU device arguments
- *
- * This structure contains pointers to device memory for the AICPU shared object.
- * The layout is hardcoded in libaicpu_extend_kernels.so, which expects specific
- * offsets for aicpuSoBin and aicpuSoLen fields.
- */
-struct DeviceArgs {
-    uint64_t unused[12] = {0};
-    uint64_t aicpuSoBin{0};
-    uint64_t aicpuSoLen{0};
-};
-
-/**
- * Helper class for managing KernelArgs with device memory
- *
- * This class wraps KernelArgs and provides host-side initialization methods
- * for allocating device memory and copying data to the device. It separates
- * the concerns of device memory management (host-only) from the structure
- * layout (shared with kernels).
- *
- * The helper provides implicit conversion to KernelArgs* for seamless use
- * with runtime APIs.
- */
-struct KernelArgsHelper {
-    KernelArgs args;
-    MemoryAllocator* allocator_{nullptr};
-
-    /**
-     * Initialize device arguments by allocating device memory and copying data
-     *
-     * @param hostDeviceArgs  Host-side device arguments to copy
-     * @param allocator       Memory allocator to use
-     * @return 0 on success, error code on failure
-     */
-    int InitDeviceArgs(const DeviceArgs &hostDeviceArgs, MemoryAllocator& allocator);
-
-    /**
-     * Free device memory allocated for device arguments
-     *
-     * @return 0 on success, error code on failure
-     */
-    int FinalizeDeviceArgs();
-
-    /**
-     * Initialize graph arguments by allocating device memory and copying data
-     *
-     * @param hostGraph  Host-side graph to copy to device
-     * @param allocator  Memory allocator to use
-     * @return 0 on success, error code on failure
-     */
-    int InitGraphArgs(const Graph& hostGraph, MemoryAllocator& allocator);
-
-    /**
-     * Free device memory allocated for graph arguments
-     *
-     * @return 0 on success, error code on failure
-     */
-    int FinalizeGraphArgs();
-
-    /**
-     * Implicit conversion operators for seamless use with runtime APIs
-     *
-     * These operators allow KernelArgsHelper to be used wherever KernelArgs*
-     * is expected, enabling transparent device memory management while
-     * maintaining API compatibility.
-     */
-    operator KernelArgs*() { return &args; }
-    KernelArgs* operator&() { return &args; }
+struct TaskProfileRecord {
+    int task_id{0};
+    int func_id{0};
+    int core_type{0};  // requested core type (0=any, 1=AIC, 2=AIV)
+    uint32_t exec_core_id{0};
+    uint32_t exec_core_type{0};  // executing core type (1=AIC, 2=AIV)
+    uint32_t exec_phys_core_id{0};
+    uint64_t start_time{0};
+    uint64_t end_time{0};
+    std::array<uint32_t, 8> pmu_cnt{};
 };
 
 /**
@@ -153,7 +93,9 @@ public:
      * Must be called before any other operations.
      *
      * @param deviceId       Device ID (0-15)
-     * @param numCores       Number of cores for handshake (e.g., 3 for 1c2v)
+     * @param numCores       Number of cube (AIC) blocks to launch (e.g., 24 on A3).
+     *                      NOTE: the runtime also launches vector (AIV) subblocks; total handshake workers are derived
+     *                      from this count.
      * @param aicpuSoPath    Path to AICPU shared object
      * @param aicoreKernelPath Path to AICore kernel binary (default: "./aicore/kernel.o")
      * @return 0 on success, error code on failure
@@ -213,6 +155,23 @@ public:
      */
     int Run(const Graph& graph, int launchAicpuNum = 1);
 
+    void SetProfileEnabled(bool enabled);
+    bool ProfileEnabled() const;
+    bool HasLastProfile() const;
+    std::vector<TaskProfileRecord> GetLastProfile() const;
+
+    /**
+     * Execute a single task (convenience wrapper)
+     *
+     * Builds a 1-task Graph and calls Run(...).
+     *
+     * @param args           Kernel argument list (device pointers/scalars encoded as uint64_t)
+     * @param funcId         Function identifier
+     * @param launchAicpuNum Number of AICPU instances (default: 1)
+     * @return 0 on success, error code on failure
+     */
+    int RunTask(const std::vector<uint64_t>& args, int funcId, int launchAicpuNum = 1);
+
     /**
      * Print handshake results from device
      *
@@ -240,7 +199,7 @@ public:
      * @param aicpuNum    Number of AICPU instances to launch
      * @return 0 on success, error code on failure
      */
-    int LaunchAiCpuKernel(rtStream_t stream, KernelArgs *kArgs,
+    int LaunchAiCpuKernel(rtStream_t stream, DeviceKernelArgs *kArgs,
                           const char *kernelName, int aicpuNum);
 
     /**
@@ -252,7 +211,7 @@ public:
      * @param kernelArgs   Kernel arguments
      * @return 0 on success, error code on failure
      */
-    int LauncherAicoreKernel(rtStream_t stream, KernelArgs *kernelArgs);
+    int LauncherAicoreKernel(rtStream_t stream, Handshake* hankArgs);
 
     /**
      * Register a kernel binary path for a func_id
@@ -312,7 +271,7 @@ public:
      * @return 0 on success, -1 on error
      *
      * Example:
-     *   runner.Init(0, 3, "./aicpu/lib.so", "./aicore/kernel.o");
+     *   runner.Init(0, 24, "./aicpu/lib.so", "./aicore/kernel.o");
      *   runner.CompileAndLoadKernel(0, "./aicore/kernels/kernel_add.cpp", "/path/to/pto-isa");
      */
     int CompileAndLoadKernel(int funcId,
@@ -337,7 +296,8 @@ private:
     // Internal state
     bool initialized_{false};
     int deviceId_{-1};
-    int numCores_{0};
+    int numCores_{0};     // cube (AIC) blocks launched on device
+    int totalCores_{0};   // total workers (AIC + AIV subblocks)
     std::string aicoreKernelPath_;
 
     // Memory management
@@ -347,8 +307,12 @@ private:
     rtStream_t streamAicpu_{nullptr};
     rtStream_t streamAicore_{nullptr};
     AicpuSoInfo soInfo_;
-    KernelArgsHelper kernelArgs_;
-    DeviceArgs deviceArgs_;
+    DeviceKernelArgs kernelArgs_{};
+    DeviceArgs deviceArgs_{};
+    void* deviceArgsDev_{nullptr};      // DeviceArgs stored at kernelArgs_.cfgdata
+    PtoRuntimeArgs runtimeArgsHost_{};  // Host shadow copy (written to runtimeArgsDev_)
+    PtoRuntimeArgs* runtimeArgsDev_{nullptr};
+    Handshake* hankDev_{nullptr};
 
     // Handshake buffers
     std::vector<Handshake> hankArgs_;
@@ -358,6 +322,11 @@ private:
     void* binGmAddr_{nullptr};                        // Device GM base address
     std::map<int, uint64_t> funcIdToAddr_;           // func_id -> functionBinAddr
     std::map<int, std::string> funcIdToBinPath_;     // func_id -> .o file path
+
+    // Profiling: last executed graph snapshot (copied back from device).
+    bool enableProfile_{false};
+    bool hasLastGraph_{false};
+    Graph lastGraph_{};
 };
 
 #endif  // RUNTIME_DEVICERUNNER_H

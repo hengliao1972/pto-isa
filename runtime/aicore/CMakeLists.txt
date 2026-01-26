@@ -1,7 +1,21 @@
 cmake_minimum_required(VERSION 3.16.3)
 
-set(BISHENG_COMPILER "${ASCEND_HOME_PATH}/bin/ccec")
-set(BISHENG_LD "${ASCEND_HOME_PATH}/bin/ld.lld")
+find_program(
+    BISHENG_COMPILER
+    NAMES ccec bisheng
+    HINTS
+        "${ASCEND_HOME_PATH}/bin"
+        "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin"
+    REQUIRED
+)
+find_program(
+    BISHENG_LD
+    NAMES ld.lld
+    HINTS
+        "${ASCEND_HOME_PATH}/bin"
+        "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin"
+    REQUIRED
+)
 
 # Fetch pto-isa from gitcode.com using CMake FetchContent
 include(FetchContent)

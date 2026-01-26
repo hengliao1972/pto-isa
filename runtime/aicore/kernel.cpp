@@ -8,6 +8,10 @@
 #include "../graph/handshake.h"
 #include "../graph/graph.h"
 
+#if defined(__CCE__) && defined(__clang__)
+#include <cce_aicore_intrinsics.h>
+#endif
+
 #ifndef __gm__
 #define __gm__
 #endif
@@ -39,6 +43,37 @@
 [[block_local]] int blockIdx;
 
 using namespace pto;
+
+__aicore__ __attribute__((always_inline)) static inline void Barrier() {
+#if defined(__CCE_KT_TEST__) && __CCE_KT_TEST__ == 1
+    __asm__ __volatile__("" ::: "memory");
+#else
+    __asm__ __volatile__("");
+#endif
+}
+
+__aicore__ __attribute__((always_inline)) static inline void RefreshHandshake(__gm__ volatile Handshake *hank) {
+    Barrier();
+    dcci((__gm__ void *)hank, SINGLE_CACHE_LINE);
+    dsb(DSB_DDR);
+    Barrier();
+}
+
+__aicore__ __attribute__((always_inline)) static inline void FlushHandshake(__gm__ volatile Handshake *hank) {
+    Barrier();
+    dcci((__gm__ void *)hank, SINGLE_CACHE_LINE);
+    dsb(DSB_DDR);
+    Barrier();
+}
+
+__aicore__ __attribute__((always_inline)) static inline uint64_t ReadDeviceClock() {
+#if defined(__CCE__) && defined(__clang__)
+    // Raw system counter ticks exposed by the CCE toolchain.
+    return static_cast<uint64_t>(get_sys_cnt());
+#else
+    return 0;
+#endif
+}
 
 // TADD implementation (float path)
 template <typename T, int kTRows_, int kTCols_, int vRows, int vCols>
@@ -139,19 +174,20 @@ extern "C" __global__ __aicore__ void KERNEL_ENTRY(aicore_kernel)(__gm__ struct 
 #endif
 
     // Get this core's handshake buffer
-    __gm__ Handshake* my_hank = &hank[blockIdx];
+    __gm__ volatile Handshake* my_hank = &hank[blockIdx];
 
     // Phase 1: Wait for AICPU initialization signal
     while (my_hank->aicpu_ready == 0) {
-        dcci(my_hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+        RefreshHandshake(my_hank);
     }
 
     // Phase 2: Signal AICore is ready (use core_id + 1 to avoid 0)
     my_hank->aicore_done = blockIdx + 1;
+    FlushHandshake(my_hank);
 
     // Phase 3: Main execution loop - poll for tasks until quit signal
     while (true) {
-        dcci(my_hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+        RefreshHandshake(my_hank);
 
         // Check for quit command from AICPU
         if (my_hank->control == 1) {
@@ -159,11 +195,36 @@ extern "C" __global__ __aicore__ void KERNEL_ENTRY(aicore_kernel)(__gm__ struct 
         }
 
         // Execute task if assigned (task != 0 means valid Task* pointer)
-        if (my_hank->task != 0) {
+        if (my_hank->task != 0 && my_hank->task_status != 0) {
             __gm__ Task* task_ptr = reinterpret_cast<__gm__ Task*>(my_hank->task);
-            execute_task(task_ptr);
+            if (my_hank->profile_enable != 0) {
+                // Record per-task profiling (best-effort; visible to host via Graph copy-back).
+                // NOTE: We flush exactly one cache line (TaskProfile is 64B-aligned and 64B-sized).
+                task_ptr->profile.exec_core_id = static_cast<uint32_t>(blockIdx);
+    #ifdef __AIV__
+                task_ptr->profile.exec_core_type = 2;
+    #else
+                task_ptr->profile.exec_core_type = 1;
+    #endif
+                task_ptr->profile.exec_phys_core_id = static_cast<uint32_t>(get_coreid());
+                const uint64_t t0 = ReadDeviceClock();
+                task_ptr->profile.start_time = t0;
+                task_ptr->profile.end_time = 0;
+                execute_task(task_ptr);
+                const uint64_t t1 = ReadDeviceClock();
+                task_ptr->profile.end_time = t1;
+                // For convenience, store the duration ticks in pmu_cnt[0] (clipped to 32-bit).
+                task_ptr->profile.pmu_cnt[0] = static_cast<uint32_t>(t1 - t0);
+                Barrier();
+                dcci((__gm__ void *)&task_ptr->profile, SINGLE_CACHE_LINE);
+                dsb(DSB_DDR);
+                Barrier();
+            } else {
+                execute_task(task_ptr);
+            }
             // Mark task as complete (task_status: 0=idle, 1=busy)
             my_hank->task_status = 0;
+            FlushHandshake(my_hank);
         }
     }
 }

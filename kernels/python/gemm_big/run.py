@@ -19,13 +19,6 @@ from kernels.python.gemm_big.kernel import GemmConfig, make_gemm_f16f16f32_kerne
 
 
 def _default_ptoas() -> Path:
-    for p in (
-        _REPO_ROOT / "bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build-macos/bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build/bin/ptoas",
-    ):
-        if p.exists():
-            return p
     return _REPO_ROOT / "bin/ptoas"
 
 

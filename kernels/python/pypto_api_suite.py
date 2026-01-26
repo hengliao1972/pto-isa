@@ -4,7 +4,7 @@ from __future__ import annotations
 pyPTO API coverage suite.
 
 Goals:
-- Exercise a broad set of PTO instructions exposed by `pto_as.PTO` (and its aliases).
+- Exercise a broad set of PTO instructions exposed by `pto.PTO` (and its aliases).
 - Cover shapes: (16x16, 32x16, 16x32, 128x128, 256x256).
 - Keep the *max tile size* <= 32KB (we cap tiles to at most 32x32; f32 => 16KB).
 
@@ -12,7 +12,7 @@ These kernels are AST-parsed (not executed). Avoid helper function calls; keep c
 flow to `for range(...)` and simple `if`.
 """
 
-from pto_as import PTO, scalar
+from pto import PTO, scalar
 
 
 def api_memory_ops():

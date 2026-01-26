@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from math import sqrt
 
-from pto_as import PTO, scalar
+from pto import PTO, scalar
 
 
 def flash_attention64_split():

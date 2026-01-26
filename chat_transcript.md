@@ -341,7 +341,7 @@ how should I use compiler.py, what is its output
 
 `compiler.py` 是一个 **Python DSL 编译器**，它：
 - **输入**: Python 代码 (使用 Fluent API 构建 PTO 程序)
-- **输出**: PTO-AS 汇编代码 (MLIR 风格的文本格式)
+- **输出**: PTO-AS 汇编代码（PTO-AS 文本格式）
 
 ---
 
@@ -479,7 +479,7 @@ tstore %c, %mem_c[0, 0]                                  ← 存储指令
          ▼                        ▼
 ┌─────────────────┐      ┌─────────────────┐
 │   PTO-AS 汇编    │      │   ARM64 C 代码   │
-│   (MLIR风格)    │      │  (NEON intrinsic)│
+│  (PTO-AS文本)   │      │  (NEON intrinsic)│
 └─────────────────┘      └─────────────────┘
 ```
 
@@ -642,7 +642,7 @@ compiler.py and pto_c_compiler.py seems to be quite similar, what is the differe
 │        │                                   │                                │
 │        ▼                                   ▼                                │
 │  PTO-AS 汇编文本                      ARM64 NEON C 代码                      │
-│  (MLIR 风格)                         (可编译执行)                           │
+│  (PTO-AS 文本)                        (可编译执行)                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

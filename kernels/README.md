@@ -7,6 +7,7 @@ This directory contains runnable kernel/operator examples.
 - Python kernels (recommended): `kernels/python/`
   - Flow: Python -> PTO-AS -> `ptoas` -> build/run (CPU ref; optional Ascend NPU)
   - Entry point: `kernels/python/run_regression.py`
+  - Runtime BGEMM + per-task trace (Ascend A2/A3): `kernels/python/bgemm_performance/run_runtime.py`
 - Custom examples: `kernels/custom/`
 
 ## Notes

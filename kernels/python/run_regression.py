@@ -33,13 +33,6 @@ class Case:
 
 
 def _default_ptoas(repo: Path) -> Path:
-    for p in (
-        repo / "bin/ptoas",
-        repo / "ptoas/mlir/build-macos/bin/ptoas",
-        repo / "ptoas/mlir/build/bin/ptoas",
-    ):
-        if p.exists():
-            return p
     return repo / "bin/ptoas"
 
 

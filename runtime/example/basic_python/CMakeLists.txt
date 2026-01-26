@@ -10,6 +10,12 @@ configure_file(
     COPYONLY
 )
 
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/gemm16_ptoas.py
+    ${CMAKE_CURRENT_BINARY_DIR}/gemm16_ptoas.py
+    COPYONLY
+)
+
 # Copy the run helper script
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/run.sh
@@ -42,6 +48,7 @@ configure_file(
 add_custom_target(python_example ALL
     DEPENDS
         ${CMAKE_CURRENT_BINARY_DIR}/graphbuilder.py
+        ${CMAKE_CURRENT_BINARY_DIR}/gemm16_ptoas.py
         ${CMAKE_CURRENT_BINARY_DIR}/run.sh
         ${CMAKE_CURRENT_BINARY_DIR}/kernels/kernel_add.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/kernels/kernel_add_scalar.cpp

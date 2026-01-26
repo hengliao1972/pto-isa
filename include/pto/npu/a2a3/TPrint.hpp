@@ -43,9 +43,9 @@ DEFINE_TYPE_NAME_GROUP("float16", half)
 template <typename T> PTO_INTERNAL void PrintValue(T &val, int col) {
   if (col > 0)
     cce::printf(" ");
-  if constexpr (is_same_v<T, float> || is_same_v<T, half>) {
+  if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half>) {
     cce::printf("%6.2f", static_cast<float>(val));
-  } else if constexpr (is_integral_v<T>) {
+  } else if constexpr (std::is_integral_v<T>) {
     cce::printf("%6d", static_cast<int>(val));
   } else {
     static_assert(sizeof(T) == 0, "Unsupported data type for Print.");

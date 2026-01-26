@@ -1,8 +1,22 @@
 cmake_minimum_required(VERSION 3.16.3)
 
-# Get the Bisheng compiler and linker paths from parent
-set(BISHENG_COMPILER "${ASCEND_HOME_PATH}/bin/ccec")
-set(BISHENG_LD "${ASCEND_HOME_PATH}/bin/ld.lld")
+# Get the Bisheng compiler and linker paths from ASCEND_HOME_PATH (supports multiple CANN layouts).
+find_program(
+    BISHENG_COMPILER
+    NAMES ccec bisheng
+    HINTS
+        "${ASCEND_HOME_PATH}/bin"
+        "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin"
+    REQUIRED
+)
+find_program(
+    BISHENG_LD
+    NAMES ld.lld
+    HINTS
+        "${ASCEND_HOME_PATH}/bin"
+        "${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin"
+    REQUIRED
+)
 
 # Get PTO_ISA_ROOT from parent (set in runtime/aicore/CMakeLists.txt)
 # For now, fetch it here too
@@ -86,6 +100,7 @@ target_include_directories(graphbuilder PUBLIC
 # Link CANN runtime
 target_include_directories(graphbuilder PRIVATE
     ${ASCEND_HOME_PATH}/include
+    ${ASCEND_HOME_PATH}/include/experiment/msprof
     ${ASCEND_HOME_PATH}/pkg_inc
     ${ASCEND_HOME_PATH}/pkg_inc/runtime
     ${ASCEND_HOME_PATH}/pkg_inc/profiling

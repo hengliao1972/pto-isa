@@ -43,6 +43,24 @@
 // Data Structures
 // =============================================================================
 
+// =============================================================================
+// Profiling (DFX) Structures
+// =============================================================================
+
+// Per-task profiling written by the executing AICore worker.
+// Keep this a single cache line so the device can `dcci(..., SINGLE_CACHE_LINE)`
+// after updating it.
+typedef struct __attribute__((aligned(64))) {
+  uint64_t start_time;   // raw device clock ticks at task start
+  uint64_t end_time;     // raw device clock ticks at task end
+  uint32_t pmu_cnt[8];   // optional PMU counters (best-effort; may be zero)
+  uint32_t exec_core_id; // worker id (AIC: [0,nrAic), AIV: [nrAic, nrAic+nrAiv))
+  uint32_t exec_core_type; // 1=AIC (cube), 2=AIV (vector)
+  uint32_t exec_phys_core_id; // physical core id as reported by CCE
+  uint32_t reserved;
+} TaskProfile;
+static_assert(sizeof(TaskProfile) == 64, "TaskProfile must be exactly one cache line (64B)");
+
 /**
  * Task entry in the dependency graph
  *
@@ -52,6 +70,10 @@
 typedef struct {
   int task_id;                   // Unique task identifier
   int func_id;                   // Function identifier
+  // Core type routing for the in-core task:
+  //   0 = any (scheduler may pick any worker), 1 = AIC (cube), 2 = AIV (vector).
+  // This enables mixing cube-only kernels (e.g. matmul) and vector-only kernels in one run.
+  int core_type;
   uint64_t args[GRAPH_MAX_ARGS]; // Task arguments
   int num_args;                  // Number of valid arguments
 
@@ -60,14 +82,13 @@ typedef struct {
   // It's cast to a function pointer at runtime: (KernelFunc)functionBinAddr
   uint64_t functionBinAddr;     // Address of kernel in device GM memory
 
-  // Dependency tracking (using PTO runtime terminology)
+ // Dependency tracking (using PTO runtime terminology)
   int fanin;                    // Number of predecessors (dependencies)
   int fanout[GRAPH_MAX_FANOUT]; // Successor task IDs
   int fanout_count;             // Number of successors
 
-  // DFX-specific fields
-  uint64_t start_time;          // Start time of the task
-  uint64_t end_time;            // End time of the task
+  // DFX/perf fields (written by AICore).
+  TaskProfile profile;
 } Task;
 
 // =============================================================================
@@ -111,6 +132,7 @@ public:
    * @return Task ID (>= 0) on success, -1 on failure
    */
   int add_task(uint64_t *args, int num_args, int func_id);
+  int add_task(uint64_t *args, int num_args, int func_id, int core_type);
 
   /**
    * Add a dependency edge: from_task -> to_task
@@ -134,6 +156,7 @@ public:
    * @return Pointer to task, or nullptr if invalid ID
    */
   Task *get_task(int task_id);
+  const Task *get_task(int task_id) const;
 
   /**
    * Get the total number of tasks in the graph
