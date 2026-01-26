@@ -1,264 +1,491 @@
-# PTO Runtime - Graph Execution Framework
+# PTO Runtime - Task Graph Execution Framework
 
-ARM64 runtime for executing task dependency graphs on Ascend devices with AICPU and AICore coordination.
+Modular runtime for building and executing task dependency graphs on Ascend devices with coordinated AICPU and AICore execution. Three independently compiled programs work together through clearly defined APIs.
 
-## Overview
+## Architecture Overview
 
-This runtime enables building and executing computational task graphs on Ascend devices. It provides:
-- Task dependency graph management
-- Device memory allocation and management
-- AICPU and AICore kernel coordination
-- Host-device data transfer
-- **Python bindings for easy integration**
+The PTO Runtime consists of **three separate programs** that communicate through well-defined APIs:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Python Application                        │
+│              (examples/basic/main.py)                       │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+         ┌────────────────┼────────────────┐
+         │                │                │
+    Python Bindings   (ctypes)      Device I/O
+    runtime_bindings.py
+         │                │                │
+         ▼                ▼                ▼
+┌──────────────────┐  ┌──────────────────┐
+│   Host Runtime   │  │   Binary Data    │
+│   (src/host/)    │  │  (AICPU + AICore)│
+├──────────────────┤  └──────────────────┘
+│ DeviceRunner     │         │
+│ Graph            │         │
+│ MemoryAllocator  │    Loaded at runtime
+│ C API            │         │
+└────────┬─────────┘         │
+         │                   │
+         └───────────────────┘
+                 │
+                 ▼
+    ┌────────────────────────────┐
+    │  Ascend Device (Hardware)   │
+    ├────────────────────────────┤
+    │ AICPU: Task Scheduler       │  (src/aicpu/)
+    │ AICore: Compute Kernels     │  (src/aicore/)
+    └────────────────────────────┘
+```
+
+## Three Components
+
+### 1. Host Runtime (`src/host/`)
+**C++ library** - Device orchestration and management
+- `DeviceRunner`: Singleton managing device operations
+- `Graph`: Task dependency graph data structure
+- `MemoryAllocator`: Device tensor memory management
+- `pto_runtime_c_api.h`: Pure C API for Python bindings
+- Compiled to shared library (.so) at runtime
+
+**Key Responsibilities:**
+- Allocate/free device memory
+- Host ↔ Device data transfer
+- AICPU kernel launching and configuration
+- AICore kernel registration and loading
+- Graph execution workflow coordination
+
+### 2. AICPU Kernel (`src/aicpu/`)
+**Device program** - Task scheduler running on AICPU processor
+- `kernel.cpp`: Kernel entry points and handshake protocol
+- `execute.cpp`: Task scheduler implementation
+- Compiled to device binary at build time
+
+**Key Responsibilities:**
+- Initialize handshake protocol with AICore cores
+- Identify initially ready tasks (fanin=0)
+- Dispatch ready tasks to idle AICore cores
+- Track task completion and update dependencies
+- Continue until all tasks complete
+
+### 3. AICore Kernel (`src/aicore/`)
+**Device program** - Computation kernels executing on AICore processors
+- `kernel.cpp`: Task execution kernels (add, mul, etc.)
+- Compiled to object file (.o) at build time
+
+**Key Responsibilities:**
+- Wait for task assignment via handshake buffer
+- Read task arguments and kernel address
+- Execute kernel using PTO ISA
+- Signal task completion
+- Poll for next task or quit signal
+
+## API Layers
+
+Three layers of APIs enable the separation:
+
+### Layer 1: C++ API (`src/host/devicerunner.h`)
+```cpp
+DeviceRunner& runner = DeviceRunner::Get();
+runner.Init(device_id, num_cores, aicpu_bin, aicore_bin, pto_isa_root);
+runner.AllocateTensor(bytes);
+runner.CopyToDevice(device_ptr, host_ptr, bytes);
+runner.Run(graph);
+runner.Finalize();
+```
+
+### Layer 2: C API (`src/host/pto_runtime_c_api.h`)
+```c
+int DeviceRunner_Init(device_id, num_cores, aicpu_binary, aicpu_size,
+                      aicore_binary, aicore_size, pto_isa_root);
+int DeviceRunner_Run(graph_handle, launch_aicpu_num);
+int InitGraph(graph_handle);
+int ValidateGraph(graph_handle);
+int DeviceRunner_Finalize();
+```
+
+### Layer 3: Python API (`python/runtime_bindings.py`)
+```python
+DeviceRunner, Graph = load_runtime(host_binary)
+runner = DeviceRunner()
+runner.init(device_id, num_cores, aicpu_binary, aicore_binary, pto_isa_root)
+graph = Graph()
+graph.initialize()
+runner.run(graph)
+graph.validate_and_cleanup()
+runner.finalize()
+```
 
 ## Directory Structure
 
 ```
 runtime/
-├── graph/              # Task dependency graph (merged from graph + common)
-│   ├── graph.h/cpp         # Graph class implementation
-│   ├── handshake.h         # AICPU-AICore handshake protocol
-│   └── kernel_args.h       # Kernel argument structures
-├── host/               # Host-side runtime (NEW)
-│   ├── devicerunner.h/cpp  # Device execution interface
-│   └── memoryallocator.h/cpp # Memory management
-├── aicpu/              # AICPU kernel implementation
-│   ├── graph_executor.cpp  # Task scheduler for AICPU
-│   └── device_log.h/cpp    # Device logging utilities
-├── aicore/             # AICore kernel implementation
-│   └── kernel.cpp          # Task execution kernels (add, mul, etc.)
-├── python/             # Python bindings (NEW)
-│   ├── bindings.cpp        # pybind11 bindings
-│   ├── graphbuilder.py     # Python example
-│   ├── CMakeLists.txt      # Python module build config
-│   └── README.md           # Python API documentation
-├── graphbuilder.cpp    # C++ example application
-└── CMakeLists.txt      # Main build configuration
+├── src/
+│   ├── host/                        # Host runtime program
+│   │   ├── devicerunner.h/cpp       # Device management
+│   │   ├── memoryallocator.h/cpp    # Memory allocation
+│   │   ├── kernel_compiler.h/cpp    # Runtime kernel compilation
+│   │   ├── binary_loader.h/cpp      # Binary loading utilities
+│   │   ├── pto_runtime_c_api.h/cpp  # C API for bindings
+│   │   └── function_cache.h         # Kernel binary cache
+│   ├── aicpu/                       # AICPU kernel (device program)
+│   │   ├── kernel.cpp              # Entry points & handshake
+│   │   ├── execute.cpp             # Task scheduler
+│   │   └── device_log.h/cpp        # Device logging
+│   ├── aicore/                      # AICore kernel (device program)
+│   │   └── kernel.cpp              # Task execution kernels
+│   └── common/                      # Shared structures
+│       └── kernel_args.h            # Kernel argument structures
+│
+├── python/                          # Language bindings
+│   ├── runtime_bindings.py          # ctypes wrapper (C → Python)
+│   ├── binary_compiler.py           # Multi-platform compiler
+│   └── toolchain.py                 # Toolchain configuration
+│
+├── examples/basic/                  # Complete working example
+│   ├── main.py                      # Python orchestration
+│   ├── host/graphmaker.cpp          # C++ graph builder & validator
+│   ├── aicpu/execute.cpp            # Example scheduler
+│   ├── graph/                       # Task graph definitions
+│   │   ├── graph.h/cpp              # Task graph and handshake structures
+│   │   └── kernel_args.h
+│   └── kernels/aiv/                 # Example kernels
+│       ├── kernel_add.cpp
+│       ├── kernel_add_scalar.cpp
+│       └── kernel_mul.cpp
+│
+└── CMakeLists.txt                   # Build configuration
 ```
-
-## Key Components
-
-### Graph Class ([graph/](graph/))
-- Manages task dependency graphs with fixed-size arrays
-- Tracks task arguments, dependencies (fanin/fanout), and execution state
-- Provides topological ordering for execution
-
-### DeviceRunner ([host/devicerunner.h](host/devicerunner.h))
-- Singleton interface for device operations
-- Manages AICPU and AICore kernel launching
-- Handles memory allocation and data transfer
-- Coordinates graph execution workflow
-
-### MemoryAllocator ([host/memoryallocator.h](host/memoryallocator.h))
-- Centralized device memory management
-- Automatic tracking of allocations
-- Prevents memory leaks with automatic cleanup
-
-### AICPU Graph Executor ([aicpu/graph_executor.cpp](aicpu/graph_executor.cpp))
-- Task scheduler running on AICPU
-- Manages handshake protocol with AICore
-- Dispatches ready tasks to AICore cores
-- Implements task dependency resolution
-
-### AICore Kernels ([aicore/kernel.cpp](aicore/kernel.cpp))
-- Task execution on AICore using PTO ISA
-- Implements arithmetic operations (add, mul, etc.)
-- Polls handshake buffer for task assignments
 
 ## Building
 
 ### Prerequisites
-
 - CMake 3.15+
-- CANN toolkit (Ascend runtime)
-- GCC/G++ with C++17 support
-- **Python 3 with development headers (for Python bindings)**
-- **pybind11 (automatically fetched if not available)**
+- CANN toolkit with:
+  - `ccec` compiler (AICore Bisheng CCE)
+  - Cross-compiler for AICPU (aarch64-target-linux-gnu-gcc/g++)
+- Standard C/C++ compiler (gcc/g++) for host
+- Python 3 with development headers
 
 ### Environment Setup
-
 ```bash
+source /usr/local/Ascend/ascend-toolkit/latest/bin/setenv.bash
 export ASCEND_HOME_PATH=/usr/local/Ascend/ascend-toolkit/latest
 ```
 
-### Build C++ Components
+### Build Process
 
-```bash
-cd runtime
-mkdir -p build && cd build
-cmake ..
-make
+The **BinaryCompiler** class handles compilation of all three components separately:
+
+```python
+from binary_compiler import BinaryCompiler
+
+compiler = BinaryCompiler()
+
+# Compile each component to independent binaries
+aicore_binary = compiler.compile("aicore", include_dirs, source_dirs)    # → .o file
+aicpu_binary = compiler.compile("aicpu", include_dirs, source_dirs)      # → .so file
+host_binary = compiler.compile("host", include_dirs, source_dirs)        # → .so file
 ```
 
-This produces:
-- `graph_executor` - C++ example executable
-- `aicpu/libaicpu_graph_kernel.so` - AICPU kernel library
-- `aicore/kernel.o` - AICore kernel binary
+**Toolchains used:**
+- **AICore**: Bisheng CCE (`ccec` compiler) → `.o` object file
+- **AICPU**: aarch64 cross-compiler → `.so` shared object
+- **Host**: Standard gcc/g++ → `.so` shared library
 
-### Build Python Bindings
-
-```bash
-cd runtime
-mkdir -p build && cd build
-cmake .. -DBUILD_PYTHON_BINDINGS=ON
-make
-```
-
-This additionally builds:
-- `python/pto_runtime.so` - Python module
-
-To disable Python bindings:
-```bash
-cmake .. -DBUILD_PYTHON_BINDINGS=OFF
-```
+Each component is compiled independently with its own toolchain, allowing modular development.
 
 ## Usage
 
-### C++ Example
+### Quick Start - Python Example
+
+```python
+from runtime_bindings import load_runtime
+from binary_compiler import BinaryCompiler
+
+# Compile all binaries
+compiler = BinaryCompiler()
+aicore_bin = compiler.compile("aicore", [...include_dirs...], [...source_dirs...])
+aicpu_bin = compiler.compile("aicpu", [...include_dirs...], [...source_dirs...])
+host_bin = compiler.compile("host", [...include_dirs...], [...source_dirs...])
+
+# Load and initialize runtime
+DeviceRunner, Graph = load_runtime(host_bin)
+runner = DeviceRunner()
+runner.init(device_id=9, num_cores=3,
+           aicpu_binary=aicpu_bin,
+           aicore_binary=aicore_bin,
+           pto_isa_root="/path/to/pto-isa")
+
+# Create and execute graph
+graph = Graph()
+graph.initialize()  # C++ builds graph and allocates tensors
+runner.run(graph, launch_aicpu_num=1)  # Execute on device
+graph.validate_and_cleanup()  # Verify and cleanup
+
+runner.finalize()
+```
+
+### Running the Example
 
 ```bash
-cd runtime/build
-./graph_executor 9  # Run on device 9
+cd runtime/examples/basic
+python3 main.py [device_id]
 ```
+
+This example:
+1. Compiles AICPU, AICore, and Host binaries using BinaryCompiler
+2. Loads the host runtime library
+3. Initializes DeviceRunner with compiled binaries
+4. Creates a task graph: `f = (a + b + 1)(a + b + 2)` with 4 tasks and dependencies
+5. Executes on device (AICPU scheduling, AICore computing)
+6. Validates results and cleans up
 
 Expected output:
 ```
-=== Graph Builder Example ===
-...
+=== Creating and Initializing Graph ===
+Formula: (a + b + 1)(a + b + 2)
+
+=== Executing Graph on Device ===
+
+=== Validating Results and Cleaning Up ===
 ✓ SUCCESS: All 16384 elements are correct (42.0)
 Formula verified: (a + b + 1)(a + b + 2) = (2+3+1)*(2+3+2) = 42
 ```
 
-### Python Example
+## Execution Flow
 
-See [python/README.md](python/README.md) for detailed Python API documentation.
-
-```bash
-cd runtime/build/python
-export PYTHONPATH=$(pwd):$PYTHONPATH
-python3 ../../python/graphbuilder.py 9
+### 1. Python Setup Phase
+```
+Python main.py
+  │
+  ├─→ BinaryCompiler.compile("host", ...) → host_binary (.so)
+  ├─→ BinaryCompiler.compile("aicpu", ...) → aicpu_binary (.so)
+  ├─→ BinaryCompiler.compile("aicore", ...) → aicore_binary (.o)
+  │
+  └─→ load_runtime(host_binary)
+       └─→ RuntimeLibraryLoader(host_binary)
+            └─→ CDLL(host_binary) ← Loads .so into memory
 ```
 
-Quick Python example:
-```python
-import numpy as np
-import pto_runtime
-
-# Initialize device
-runner = pto_runtime.DeviceRunner.get()
-runner.init(9, 3, "./aicpu/libaicpu_graph_kernel.so", "./aicore/kernel.o")
-
-# Allocate tensors
-dev_a = runner.allocate_tensor(128 * 128 * 4)
-dev_b = runner.allocate_tensor(128 * 128 * 4)
-dev_c = runner.allocate_tensor(128 * 128 * 4)
-
-# Copy data
-a = np.full((128, 128), 2.0, dtype=np.float32)
-b = np.full((128, 128), 3.0, dtype=np.float32)
-runner.copy_to_device(dev_a, a)
-runner.copy_to_device(dev_b, b)
-
-# Build and run graph
-graph = pto_runtime.Graph()
-t0 = graph.add_task([dev_a, dev_b, dev_c, 128*128], func_id=0)
-runner.run(graph)
-
-# Get results
-result = np.zeros((128, 128), dtype=np.float32)
-runner.copy_from_device(result, dev_c)
-
-# Cleanup
-runner.free_tensor(dev_a)
-runner.free_tensor(dev_b)
-runner.free_tensor(dev_c)
-runner.finalize()
+### 2. Initialization Phase
+```
+runner.init(device_id, num_cores, aicpu_binary, aicore_binary, pto_isa_root)
+  │
+  ├─→ DeviceRunner_Init (C API)
+  │    ├─→ Initialize CANN device
+  │    ├─→ Allocate device streams
+  │    ├─→ Load AICPU binary to device
+  │    ├─→ Register AICore kernel binary
+  │    └─→ Create handshake buffers (one per core)
+  │
+  └─→ DeviceRunner singleton ready
 ```
 
-## Architecture
-
-### Execution Flow
-
+### 3. Graph Building Phase
 ```
-1. Host (graphbuilder.cpp or Python):
-   ├─ Build task graph (Graph class)
-   ├─ Allocate device memory (DeviceRunner)
-   ├─ Copy input data to device
-   └─ Call DeviceRunner::Run(graph)
-
-2. DeviceRunner::Run():
-   ├─ Copy graph to device memory
-   ├─ Launch AICPU init kernel (handshake)
-   ├─ Launch AICPU main kernel (scheduler)
-   ├─ Launch AICore kernel (workers)
-   └─ Synchronize streams
-
-3. AICPU (graph_executor.cpp):
-   ├─ Handshake with AICore cores
-   ├─ Find initially ready tasks (fanin=0)
-   ├─ Dispatch tasks to idle AICore cores
-   ├─ Wait for task completion
-   ├─ Update fanin counters
-   └─ Repeat until all tasks done
-
-4. AICore (kernel.cpp):
-   ├─ Wait for task assignment
-   ├─ Read task arguments
-   ├─ Execute kernel (add/mul/etc.)
-   ├─ Signal completion
-   └─ Repeat until quit signal
+graph.initialize()
+  │
+  └─→ InitGraph (C API)
+       └─→ InitGraphImpl (C++)
+            ├─→ Compile kernels at runtime (CompileAndLoadKernel)
+            │    ├─→ KernelCompiler calls ccec
+            │    ├─→ Load .o to device GM memory
+            │    └─→ Update kernel function address table
+            │
+            ├─→ Allocate device tensors via MemoryAllocator
+            ├─→ Copy input data to device
+            ├─→ Build task graph with dependencies
+            └─→ Return Graph pointer
 ```
 
-### Handshake Protocol
+### 4. Execution Phase
+```
+runner.run(graph, launch_aicpu_num=1)
+  │
+  └─→ DeviceRunner_Run (C API)
+       │
+       ├─→ Copy Graph to device memory
+       │
+       ├─→ LaunchAiCpuKernel (init kernel)
+       │    └─→ Execute on AICPU: Initialize handshake
+       │
+       ├─→ LaunchAiCpuKernel (main scheduler kernel)
+       │    └─→ Execute on AICPU: Task scheduler loop
+       │         ├─→ Find initially ready tasks
+       │         ├─→ Loop: dispatch tasks, wait for completion
+       │         └─→ Continue until all tasks done
+       │
+       ├─→ LauncherAicoreKernel
+       │    └─→ Execute on AICore cores: Task workers
+       │         ├─→ Wait for task assignment
+       │         ├─→ Execute kernel
+       │         └─→ Signal completion, repeat
+       │
+       └─→ rtStreamSynchronize (wait for completion)
+```
 
-Each AICore core has a dedicated handshake buffer:
+### 5. Validation Phase
+```
+graph.validate_and_cleanup()
+  │
+  └─→ ValidateGraph (C API)
+       └─→ ValidateGraphImpl (C++)
+            ├─→ Copy results from device to host
+            ├─→ Verify correctness (compare with expected values)
+            ├─→ Free all device tensors
+            ├─→ Delete graph
+            └─→ Return success/failure
+```
+
+## Handshake Protocol
+
+AICPU and AICore cores coordinate via **handshake buffers** (one per core):
 
 ```c
 struct Handshake {
-    volatile uint32_t aicpu_ready;  // AICPU→AICore: scheduler ready
-    volatile uint32_t aicore_done;  // AICore→AICPU: core ready
-    volatile uint64_t task;         // AICPU→AICore: task pointer
-    volatile int32_t task_status;   // Task state: 1=busy, 0=done
-    volatile int32_t control;       // AICPU→AICore: 1=quit
+    volatile uint32_t aicpu_ready;   // AICPU→AICore: scheduler ready
+    volatile uint32_t aicore_done;   // AICore→AICPU: core ready
+    volatile uint64_t task;          // AICPU→AICore: task pointer
+    volatile int32_t task_status;    // Task state: 1=busy, 0=done
+    volatile int32_t control;        // AICPU→AICore: 1=quit
 };
 ```
 
-## Recent Changes
+**Flow:**
+1. AICPU finds a ready task
+2. AICPU writes task pointer to handshake buffer and sets `aicpu_ready`
+3. AICore polls buffer, sees task, reads from device memory
+4. AICore sets `task_status = 1` (busy) and executes
+5. AICore sets `task_status = 0` (done) and `aicore_done`
+6. AICPU reads result and continues
 
-### Reorganization (Current)
+## Components in Detail
 
-1. **Merged `graph/` and `common/`**
-   - Moved `handshake.h` and `kernel_args.h` from `common/` to `graph/`
-   - All shared structures now in one location
-   - Simplified include paths
+### Host Runtime (`src/host/`)
 
-2. **Created `host/` directory**
-   - Moved `devicerunner.cpp/h` and `memoryallocator.cpp/h`
-   - Separates host-side runtime from device kernels
-   - Clearer organization
+**DeviceRunner**: Singleton managing device operations
+- Allocate/free device tensor memory
+- Copy data between host and device
+- Launch AICPU and AICore kernels
+- Manage handshake buffers
+- Coordinate graph execution
 
-3. **Added Python bindings**
-   - New `python/` directory with pybind11 bindings
-   - Python API matches C++ interface
-   - NumPy integration for efficient data transfer
-   - Example Python application (`graphbuilder.py`)
+**Graph**: Task dependency graph
+- Add tasks with arguments and function IDs
+- Add dependencies between tasks (fanin/fanout)
+- Query task information and dependency structure
+- Calculate topologically ready tasks
 
-## Logging
+**MemoryAllocator**: Device memory management
+- Allocate blocks from device GM memory
+- Track allocations automatically
+- Free with automatic cleanup on finalization
 
-Device logs are written to `~/ascend/log/debug/device-<id>/`
+**pto_runtime_c_api**: Pure C interface
+- Enables Python ctypes bindings
+- Wraps C++ classes as opaque pointers
+- Error codes: 0=success, negative=failure
+- All memory management in C++
 
-Kernel uses `DEV_INFO`, `DEV_DEBUG`, `DEV_WARN`, `DEV_ERROR` macros.
+### AICPU Kernel (`src/aicpu/`)
+
+**kernel.cpp**: Kernel entry points
+- Initialization kernel: Sets up handshake protocol
+- Main scheduler kernel: Task scheduling loop
+- Handshake initialization and management
+
+**execute.cpp**: Task scheduler
+- Ready task identification
+- Task dispatch to cores
+- Dependency tracking and updates
+- Loop until completion
+
+### AICore Kernel (`src/aicore/`)
+
+**kernel.cpp**: Computation kernels
+- Task execution implementations
+- Kernel function pointers indexed by func_id
+- Memory access and PTO ISA operations
+- Handshake buffer polling
+
+## Features
+
+### Dynamic Kernel Compilation
+Compile and load kernels at runtime without rebuilding:
+
+```cpp
+// In host code
+runner.CompileAndLoadKernel(func_id, "path/to/kernel.cpp", core_type);
+```
+
+This compiles the kernel source using `ccec`, loads the binary to device memory, and registers it for task dispatch.
+
+### Python Bindings
+Full Python API with ctypes:
+- No C++ knowledge required
+- NumPy integration for arrays
+- Easy data transfer between host and device
+
+### Modular Design
+- Three programs compile independently
+- Clear API boundaries
+- Develop components in parallel
+- Runtime linking via binary loading
+
+## Configuration
+
+### Compile-time Configuration (Graph Limits)
+In [examples/basic/graph/graph.h](examples/basic/graph/graph.h):
+```cpp
+#define GRAPH_MAX_TASKS 1024     // Maximum number of tasks
+#define GRAPH_MAX_ARGS 16        // Maximum arguments per task
+#define GRAPH_MAX_FANOUT 512     // Maximum successors per task
+```
+
+### Runtime Configuration
+```python
+runner.init(
+    device_id=0,              # Device ID (0-15)
+    num_cores=3,              # Number of cores for handshake
+    aicpu_binary=...,         # AICPU .so binary
+    aicore_binary=...,        # AICore .o binary
+    pto_isa_root="/path/to/pto-isa"  # PTO-ISA headers location
+)
+```
 
 ## Notes
 
-- Device ID range: 0-15
-- Default device: 9
-- Graph supports up to 1024 tasks (configurable via `GRAPH_MAX_TASKS`)
-- Memory allocator automatically tracks and frees allocations
-- Python bindings require NumPy for array operations
+- **Device IDs**: 0-15 (typically device 9 used for examples)
+- **Handshake cores**: Usually 3 (1c2v configuration: 1 core, 2 vector units)
+- **Kernel compilation**: Requires `ASCEND_HOME_PATH` environment variable
+- **Memory management**: MemoryAllocator automatically tracks allocations
+- **Python requirement**: NumPy for efficient array operations
+
+## Logging
+
+Device logs written to `~/ascend/log/debug/device-<id>/`
+
+Kernel uses macros:
+- `DEV_INFO`: Informational messages
+- `DEV_DEBUG`: Debug messages
+- `DEV_WARN`: Warnings
+- `DEV_ERROR`: Error messages
+
+## Testing
+
+```bash
+cd runtime/tests
+python3 test_host_compilation.py      # Test host runtime compilation
+python3 test_aicpu_compilation.py     # Test AICPU compilation
+python3 test_aicore_compilation.py    # Test AICore compilation
+```
 
 ## References
 
-- See [graph/README.md](graph/README.md) for Graph class details
-- See [python/README.md](python/README.md) for Python API documentation
-- See example: [graphbuilder.cpp](graphbuilder.cpp) or [python/graphbuilder.py](python/graphbuilder.py)
+- [src/host/](src/host/) - Host runtime implementation details
+- [src/aicpu/](src/aicpu/) - AICPU scheduler implementation
+- [src/aicore/](src/aicore/) - AICore kernel implementation
+- [examples/basic/](examples/basic/) - Complete working example
+- [python/](python/) - Python bindings and compiler
