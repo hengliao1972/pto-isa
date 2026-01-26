@@ -192,10 +192,11 @@ def generate_code():
                     ext = ".c"
                 elif platform == "ascend_a2a3_sim":
                     code = gen.generate_ascend_a2a3_sim(prog)
-                    ext = ".c"
+                    # InCore functions use C++ (PTO ISA API), orchestration uses C
+                    ext = ".cpp" if is_incore else ".c"
                 elif platform == "ascend_a2a3":
                     code = gen.generate_ascend_a2a3(prog)
-                    ext = ".c"
+                    ext = ".cpp" if is_incore else ".c"
                 elif platform == "cuda":
                     code = gen.generate_cuda(prog)
                     ext = ".cu"

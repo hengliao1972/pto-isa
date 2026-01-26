@@ -442,81 +442,334 @@ int main(int argc, char** argv) {{
 
 
 # =============================================================================
-# InCore Function Code Generator (uses actual Ascend instructions)
+# InCore Function Code Generator (generates PTO ISA API calls)
 # =============================================================================
 
-class AscendA2A3SimIncoreGenerator:
-    """
-    Generate InCore function code with actual Ascend instructions.
+# PTO ISA instruction mapping
+PTO_ISA_OPS = {
+    # Binary operations
+    "TADD": "TADD",
+    "TSUB": "TSUB",
+    "TMUL": "TMUL",
+    "TDIV": "TDIV",
+    "TMAX": "TMAX",
+    "TMIN": "TMIN",
     
-    This generates the same code as AscendCodeGenerator, but adds
-    instrumentation for the core simulator to parse and execute.
+    # Unary operations
+    "TABS": "TABS",
+    "TNEG": "TNEG",
+    "TRECIP": "TRECIP",
+    "TEXP": "TEXP",
+    "TLOG": "TLOG",
+    "TSQRT": "TSQRT",
+    "TRSQRT": "TRSQRT",
+    "TRELU": "TRELU",
+    "TSIGMOID": "TSIGMOID",
+    "TTANH": "TTANH",
+    "TGELU": "TGELU",
+    "TSILU": "TSILU",
+    
+    # Scalar operations
+    "TADDS": "TADDS",
+    "TSUBS": "TSUBS",
+    "TMULS": "TMULS",
+    "TDIVS": "TDIVS",
+    "TEXPANDS": "TEXPANDS",
+    "TMAXS": "TMAXS",
+    "TMINS": "TMINS",
+    
+    # Row-wise broadcast operations
+    "TROWEXPANDSUB": "TROWEXPANDSUB",
+    "TROWEXPANDDIV": "TROWEXPANDDIV",
+    "TROWEXPANDMUL": "TROWEXPANDMUL",
+    "TROWEXPANDADD": "TROWEXPANDADD",
+    
+    # Reduction operations
+    "TROWSUM": "TROWSUM",
+    "TROWMAX": "TROWMAX",
+    "TROWMIN": "TROWMIN",
+    "TCOLSUM": "TCOLSUM",
+    "TCOLMAX": "TCOLMAX",
+    "TCOLMIN": "TCOLMIN",
+    
+    # Matrix operations (Cube)
+    "TMATMUL": "TMATMUL",
+    "TMATMUL_ACC": "TMATMUL_ACC",
+    
+    # Memory operations
+    "TLOAD": "TLOAD",
+    "TSTORE": "TSTORE",
+    "TCOPY": "TCOPY",
+}
+
+
+class PTOISAIncoreGenerator:
+    """
+    Generate InCore function code using PTO ISA C++ APIs.
+    
+    This generates C++ code that uses:
+    - pto::Tile<T, M, N> for local tiles in UB memory
+    - pto::GlobalTensor<T, Shape, Stride> for global memory tensors
+    - PTO ISA instructions: TLOAD, TSTORE, TADD, TMUL, TMATMUL, etc.
     """
     
     def __init__(self, module: Optional[PTOModule] = None):
         self.module = module
-        self.ascend_gen = AscendCodeGenerator(
-            enable_fusion=True,
-            analyze_buffers=True,
-            module=module,
-            target="a2a3"
-        )
     
     def generate(self, program: PTOProgram) -> str:
-        """Generate InCore function with actual Ascend instructions."""
-        lines = []
+        """Generate InCore function using PTO ISA APIs."""
+        tile_info, mock_instructions = convert_program_to_mock_instructions(program)
         
-        # Generate the actual Ascend code
-        ascend_code = self.ascend_gen.generate(program)
+        lines = []
         
         # Determine if this is a cube or vector function
         is_cube = getattr(program, 'is_cube', False)
-        core_type = "CORE_TYPE_CUBE" if is_cube else "CORE_TYPE_VECTOR"
+        core_type = "Cube" if is_cube else "Vector"
         
-        # Add header comment
+        # Generate header
         lines.append(f"// =============================================================================")
-        lines.append(f"// InCore Function: {program.name}")
-        lines.append(f"// Core Type: {'Cube' if is_cube else 'Vector'}")
+        lines.append(f"// PTO ISA InCore Function: {program.name}")
+        lines.append(f"// Core Type: {core_type}")
         lines.append(f"// =============================================================================")
         lines.append("")
-        
-        # Add the instruction code as a string constant for core simulator
-        lines.append(f"// Instruction code for core simulator parsing")
-        lines.append(f"static const char* {program.name}_instructions = ")
-        
-        # Escape the code and format as C string
-        escaped_code = ascend_code.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n"\n    "')
-        lines.append(f'    "{escaped_code}";')
+        lines.append('#include "pto/common/pto_tile.hpp"')
+        lines.append('#include "pto/common/pto_instr.hpp"')
+        lines.append("")
+        lines.append("using namespace pto;")
         lines.append("")
         
-        # Add registration function
-        lines.append(f"#ifdef A2A3_CORE_SIM_AVAILABLE")
-        lines.append(f"static int {program.name}_sim_registered = 0;")
-        lines.append(f"")
-        lines.append(f"void register_{program.name}_sim(IncoreSimulator* sim) {{")
-        lines.append(f"    if (!{program.name}_sim_registered) {{")
-        lines.append(f"        a2a3_incore_sim_register_code(sim, \"{program.name}\",")
-        lines.append(f"            {core_type}, {program.name}_instructions, 32, 128);")
-        lines.append(f"        {program.name}_sim_registered = 1;")
-        lines.append(f"    }}")
+        # Collect tile declarations
+        tile_decls = self._generate_tile_declarations(program, tile_info)
+        
+        # Generate function signature
+        params = self._generate_params(program)
+        lines.append(f"__aicore__ void {program.name}({params}) {{")
+        
+        # Declare local tiles
+        for decl in tile_decls:
+            lines.append(f"    {decl}")
+        lines.append("")
+        
+        # Generate GlobalTensor wrappers for memory references
+        global_tensors = self._generate_global_tensors(program, tile_info)
+        for gt in global_tensors:
+            lines.append(f"    {gt}")
+        if global_tensors:
+            lines.append("")
+        
+        # Generate PTO ISA instructions
+        for instr in mock_instructions:
+            instr_lines = self._generate_instruction(instr, tile_info)
+            for line in instr_lines:
+                lines.append(f"    {line}")
+        
+        lines.append("}")
+        lines.append("")
+        
+        # Add cycle cost function for simulation
+        lines.append(f"// Cycle cost estimation for simulation")
+        lines.append(f"extern \"C\" int64_t {program.name}_cycle_cost(void** args, int num_args) {{")
+        lines.append(f"    // Estimate based on tile sizes and operations")
+        lines.append(f"    return get_incore_cycle_cost_sim(\"{program.name}\", 8192);")
         lines.append(f"}}")
-        lines.append(f"#endif")
         lines.append("")
         
-        # Add cycle cost function
-        lines.append(f"// Get cycle cost for this function")
-        lines.append(f"int64_t {program.name}_cycle_cost(int64_t tile_size) {{")
-        lines.append(f"    return get_incore_cycle_cost_sim(\"{program.name}\", tile_size);")
+        # Add C wrapper for runtime
+        lines.append(f"// C wrapper for runtime task execution")
+        lines.append(f"extern \"C\" void {program.name}_wrapper(void** args, int num_args) {{")
+        wrapper_args = self._generate_wrapper_args(program)
+        lines.append(f"    {program.name}({wrapper_args});")
         lines.append(f"}}")
-        lines.append("")
-        
-        # Also include the actual Ascend code (for reference/debugging)
-        lines.append("/*")
-        lines.append("// Actual Ascend Instructions (for physical execution):")
-        lines.append(ascend_code)
-        lines.append("*/")
         
         return "\n".join(lines)
+    
+    def _generate_tile_declarations(self, program: PTOProgram, 
+                                     tile_info: Dict[str, MockTileInfo]) -> List[str]:
+        """Generate Tile declarations for local buffers."""
+        decls = []
+        for name, info in tile_info.items():
+            # Skip global memory references
+            if name in program.memref_declarations:
+                continue
+            
+            dtype = self._get_cpp_type(info.dtype)
+            rows = info.rows
+            cols = info.cols
+            
+            # Use pto::Tile<T, M, N>
+            decls.append(f"Tile<{dtype}, {rows}, {cols}> {name};")
+        
+        return decls
+    
+    def _generate_global_tensors(self, program: PTOProgram,
+                                  tile_info: Dict[str, MockTileInfo]) -> List[str]:
+        """Generate GlobalTensor wrappers for memory references."""
+        tensors = []
+        for name, memref_type in program.memref_declarations.items():
+            dtype = ARM64_TYPE_MAP.get(memref_type.element_type.value, "float")
+            
+            # Get shape from tile_info if available, else use default
+            if name in tile_info:
+                info = tile_info[name]
+                rows, cols = info.rows, info.cols
+            else:
+                rows, cols = 64, 64  # Default
+            
+            # Create GlobalTensor wrapper
+            tensors.append(f"GlobalTensor<{dtype}, Shape<{rows}, {cols}>, "
+                          f"Stride<{cols}, 1>> g_{name}({name});")
+        
+        return tensors
+    
+    def _generate_params(self, program: PTOProgram) -> str:
+        """Generate function parameters."""
+        params = []
+        
+        for name, memref_type in program.memref_declarations.items():
+            dtype = ARM64_TYPE_MAP.get(memref_type.element_type.value, "float")
+            params.append(f"__gm__ {dtype}* {name}")
+        
+        for name, scalar_type in program.scalar_declarations.items():
+            dtype = ARM64_TYPE_MAP.get(scalar_type.value, "int32_t")
+            params.append(f"{dtype} {name}")
+        
+        return ", ".join(params)
+    
+    def _generate_wrapper_args(self, program: PTOProgram) -> str:
+        """Generate arguments for C wrapper function."""
+        args = []
+        idx = 0
+        
+        for name, memref_type in program.memref_declarations.items():
+            dtype = ARM64_TYPE_MAP.get(memref_type.element_type.value, "float")
+            args.append(f"({dtype}*)args[{idx}]")
+            idx += 1
+        
+        for name, scalar_type in program.scalar_declarations.items():
+            dtype = ARM64_TYPE_MAP.get(scalar_type.value, "int32_t")
+            args.append(f"*({dtype}*)args[{idx}]")
+            idx += 1
+        
+        return ", ".join(args)
+    
+    def _generate_instruction(self, instr: MockInstruction,
+                               tile_info: Dict[str, MockTileInfo]) -> List[str]:
+        """Generate PTO ISA instruction code."""
+        lines = []
+        op = instr.opcode
+        dst = instr.dst
+        operands = instr.operands
+        
+        # Control flow
+        if op == "FOR":
+            iv = dst
+            lb = operands[0]
+            ub = operands[1]
+            step = operands[2] if len(operands) > 2 else "1"
+            lines.append(f"for (int {iv} = {lb}; {iv} < {ub}; {iv} += {step}) {{")
+        elif op == "ENDFOR":
+            lines.append("}")
+        elif op == "IF":
+            cond = operands[0] if operands else "true"
+            lines.append(f"if ({cond}) {{")
+        elif op == "ELSE":
+            lines.append("} else {")
+        elif op == "ENDIF":
+            lines.append("}")
+        elif op == "RETURN":
+            lines.append("return;")
+            
+        # Scalar operations
+        elif op == "SLI":
+            lines.append(f"int {dst} = {operands[0]};")
+        elif op in ("SADD", "SSUB", "SMUL", "SDIV"):
+            op_map = {"SADD": "+", "SSUB": "-", "SMUL": "*", "SDIV": "/"}
+            lines.append(f"int {dst} = {operands[0]} {op_map[op]} {operands[1]};")
+        elif op == "SMOV":
+            lines.append(f"int {dst} = {operands[0]};")
+            
+        # Memory operations
+        elif op == "TLOAD":
+            src_mem = operands[0]
+            lines.append(f"// TLOAD: {dst} = load({src_mem})")
+            lines.append(f"TLOAD({dst}, g_{src_mem});")
+        elif op == "TSTORE":
+            src = operands[0]
+            lines.append(f"// TSTORE: store({src}) -> {dst}")
+            lines.append(f"TSTORE(g_{dst}, {src});")
+        elif op == "TCOPY":
+            lines.append(f"// TCOPY: {dst} = {operands[0]}")
+            lines.append(f"TCOPY({dst}, {operands[0]});")
+            
+        # Matrix multiplication (Cube)
+        elif op == "TMATMUL":
+            src0, src1 = operands[0], operands[1]
+            lines.append(f"// TMATMUL: {dst} = {src0} @ {src1}")
+            lines.append(f"TMATMUL({dst}, {src0}, {src1});")
+        elif op == "TMATMUL_ACC":
+            c_in, src0, src1 = operands[0], operands[1], operands[2]
+            lines.append(f"// TMATMUL_ACC: {dst} = {c_in} + {src0} @ {src1}")
+            lines.append(f"TMATMUL_ACC({dst}, {c_in}, {src0}, {src1});")
+            
+        # Binary operations (Vector)
+        elif op in ("TADD", "TSUB", "TMUL", "TDIV", "TMAX", "TMIN"):
+            src0, src1 = operands[0], operands[1]
+            lines.append(f"// {op}: {dst} = {src0} op {src1}")
+            lines.append(f"{op}({dst}, {src0}, {src1});")
+            
+        # Unary operations
+        elif op in ("TABS", "TNEG", "TRECIP", "TEXP", "TLOG", "TSQRT", "TRSQRT",
+                    "TRELU", "TSIGMOID", "TTANH", "TGELU", "TSILU"):
+            src = operands[0]
+            lines.append(f"// {op}: {dst} = op({src})")
+            lines.append(f"{op}({dst}, {src});")
+            
+        # Scalar-tile operations
+        elif op in ("TADDS", "TSUBS", "TMULS", "TDIVS", "TMAXS", "TMINS"):
+            src0, scalar = operands[0], operands[1]
+            lines.append(f"// {op}: {dst} = {src0} op {scalar}")
+            lines.append(f"{op}({dst}, {src0}, {scalar});")
+        elif op == "TEXPANDS":
+            scalar = operands[0]
+            lines.append(f"// TEXPANDS: {dst} = broadcast({scalar})")
+            lines.append(f"TEXPANDS({dst}, {scalar});")
+            
+        # Reduction operations
+        elif op in ("TROWSUM", "TROWMAX", "TROWMIN", "TCOLSUM", "TCOLMAX", "TCOLMIN"):
+            src = operands[0]
+            lines.append(f"// {op}: {dst} = reduce({src})")
+            lines.append(f"{op}({dst}, {src});")
+            
+        # Row-wise broadcast operations
+        elif op in ("TROWEXPANDSUB", "TROWEXPANDDIV", "TROWEXPANDMUL", "TROWEXPANDADD"):
+            src0, src1 = operands[0], operands[1]
+            lines.append(f"// {op}: {dst} = {src0} broadcast_op {src1}")
+            lines.append(f"{op}({dst}, {src0}, {src1});")
+            
+        # Function call
+        elif op == "CALL":
+            callee = dst
+            args = ", ".join(str(a) for a in operands) if operands else ""
+            lines.append(f"{callee}({args});")
+            
+        else:
+            lines.append(f"// Unknown op: {op}")
+        
+        return lines
+    
+    def _get_cpp_type(self, dtype: str) -> str:
+        """Get C++ type for dtype string."""
+        type_map = {
+            "float": "float",
+            "f32": "float",
+            "half": "half",
+            "f16": "half",
+            "int32": "int32_t",
+            "i32": "int32_t",
+            "int64": "int64_t",
+            "i64": "int64_t",
+        }
+        return type_map.get(dtype.lower(), "float")
 
 
 # =============================================================================
@@ -528,7 +781,7 @@ class AscendA2A3SimCodeGenerator:
     Code generator for Ascend A2/A3 (both simulator and real hardware).
     
     Generates:
-    - Actual Ascend instructions for InCore functions
+    - PTO ISA API calls for InCore functions (using pto::Tile, TLOAD, etc.)
     - Orchestration code with task submission
     - Integration with runtime (simulator or hardware)
     
@@ -551,7 +804,7 @@ class AscendA2A3SimCodeGenerator:
         self.analyze_buffers = analyze_buffers
         self.module = module
         self.target_mode = target_mode
-        self.incore_gen = AscendA2A3SimIncoreGenerator(module)
+        self.incore_gen = PTOISAIncoreGenerator(module)
     
     def generate(self, program: PTOProgram) -> str:
         """Generate code for a program."""
