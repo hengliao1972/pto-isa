@@ -90,7 +90,8 @@ int a2a3_runtime_init(A2A3RuntimeConfig* config) {
     
     // Load orchestration function if path provided
     if (g_config.orchestration_so_path) {
-        g_orch_func_ptr = a2a3_load_orchestration(g_config.orchestration_so_path, NULL);
+        g_orch_func_ptr = a2a3_load_orchestration(g_config.orchestration_so_path, 
+                                                   g_config.orchestration_func_name);
         if (!g_orch_func_ptr) {
             fprintf(stderr, "[A2A3 Runtime] ERROR: Failed to load orchestration from %s\n",
                     g_config.orchestration_so_path);
@@ -150,23 +151,84 @@ int a2a3_runtime_init(A2A3RuntimeConfig* config) {
 }
 
 int a2a3_runtime_execute(void* user_data) {
+    printf("[A2A3 Runtime] === a2a3_runtime_execute() called ===\n");
+    fflush(stdout);
+    
     if (!g_initialized || !g_runtime) {
         fprintf(stderr, "[A2A3 Runtime] ERROR: Runtime not initialized\n");
         return A2A3_ERROR_NOT_INITIALIZED;
     }
+    
+    printf("[A2A3 Runtime] Step 1: Checking orchestration function...\n");
+    fflush(stdout);
     
     if (!g_orch_func_ptr) {
         fprintf(stderr, "[A2A3 Runtime] ERROR: No orchestration function loaded\n");
         return A2A3_ERROR_FUNC_NOT_FOUND;
     }
     
+    printf("[A2A3 Runtime] Step 2: Orchestration function OK, starting execution...\n");
+    fflush(stdout);
+    
+    // =========================================================================
+    // DEBUG_ORCHESTRATION mode: Only run orchestration, skip task execution
+    // =========================================================================
+    if (g_config.debug_orchestration_only) {
+        printf("[A2A3 Runtime] *** DEBUG_ORCHESTRATION MODE ***\n");
+        printf("[A2A3 Runtime] Running orchestration function only (no task execution)\n");
+        fflush(stdout);
+        
+        struct timespec start_time, end_time;
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        
+        // Call orchestration function directly (not in separate thread)
+        void* orch_user_data = user_data ? user_data : g_config.user_data;
+        printf("[A2A3 Runtime] Calling orchestration function...\n");
+        fflush(stdout);
+        
+        g_orch_func_ptr(g_runtime, orch_user_data);
+        
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        
+        // Mark orchestration as complete
+        g_runtime->orchestration_complete = true;
+        
+        // Collect stats
+        g_stats.total_tasks_scheduled = g_runtime->total_tasks_scheduled;
+        g_stats.total_tasks_completed = 0;  // No tasks executed in debug mode
+        g_stats.total_execution_time_ms = 
+            (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
+            (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;
+        
+        printf("\n");
+        printf("=======================================================\n");
+        printf("  DEBUG_ORCHESTRATION Results\n");
+        printf("=======================================================\n");
+        printf("  Number of Tasks submitted by Orchestration function: %lld\n", 
+               (long long)g_stats.total_tasks_scheduled);
+        printf("  Orchestration time: %.3f ms\n", g_stats.total_execution_time_ms);
+        if (g_stats.total_execution_time_ms > 0) {
+            printf("  Task submission rate: %.2f tasks/ms\n", 
+                   g_stats.total_tasks_scheduled / g_stats.total_execution_time_ms);
+        }
+        printf("=======================================================\n");
+        printf("\n");
+        fflush(stdout);
+        
+        return A2A3_SUCCESS;
+    }
+    
+    // =========================================================================
+    // Normal execution mode
+    // =========================================================================
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
     
     // =========================================================================
     // 1. Spawn AIV (Vector) workers
     // =========================================================================
-    printf("[A2A3 Runtime] Spawning %d AIV workers...\n", g_config.num_aiv_workers);
+    printf("[A2A3 Runtime] Step 3: Spawning %d AIV workers...\n", g_config.num_aiv_workers);
+    fflush(stdout);
     for (int i = 0; i < g_config.num_aiv_workers; i++) {
         A2A3WorkerContext* ctx = (A2A3WorkerContext*)malloc(sizeof(A2A3WorkerContext));
         if (!ctx) {
@@ -186,10 +248,14 @@ int a2a3_runtime_execute(void* user_data) {
         }
     }
     
+    printf("[A2A3 Runtime] Step 4: AIV workers spawned successfully.\n");
+    fflush(stdout);
+    
     // =========================================================================
     // 2. Spawn AIC (Cube) workers
     // =========================================================================
-    printf("[A2A3 Runtime] Spawning %d AIC workers...\n", g_config.num_aic_workers);
+    printf("[A2A3 Runtime] Step 5: Spawning %d AIC workers...\n", g_config.num_aic_workers);
+    fflush(stdout);
     for (int i = 0; i < g_config.num_aic_workers; i++) {
         int worker_idx = g_config.num_aiv_workers + i;
         A2A3WorkerContext* ctx = (A2A3WorkerContext*)malloc(sizeof(A2A3WorkerContext));
@@ -210,10 +276,14 @@ int a2a3_runtime_execute(void* user_data) {
         }
     }
     
+    printf("[A2A3 Runtime] Step 6: AIC workers spawned successfully.\n");
+    fflush(stdout);
+    
     // =========================================================================
     // 3. Spawn Dependency Resolver threads
     // =========================================================================
-    printf("[A2A3 Runtime] Spawning %d dependency resolver threads...\n", g_config.num_dep_threads);
+    printf("[A2A3 Runtime] Step 7: Spawning %d dependency resolver threads...\n", g_config.num_dep_threads);
+    fflush(stdout);
     for (int i = 0; i < g_config.num_dep_threads; i++) {
         A2A3DepResolverContext* ctx = (A2A3DepResolverContext*)malloc(sizeof(A2A3DepResolverContext));
         if (!ctx) {
@@ -232,10 +302,14 @@ int a2a3_runtime_execute(void* user_data) {
         }
     }
     
+    printf("[A2A3 Runtime] Step 8: Dependency resolver threads spawned successfully.\n");
+    fflush(stdout);
+    
     // =========================================================================
     // 4. Spawn Orchestration thread
     // =========================================================================
-    printf("[A2A3 Runtime] Spawning orchestration thread...\n");
+    printf("[A2A3 Runtime] Step 9: Spawning orchestration thread...\n");
+    fflush(stdout);
     A2A3OrchContext* orch_ctx = (A2A3OrchContext*)malloc(sizeof(A2A3OrchContext));
     if (!orch_ctx) {
         fprintf(stderr, "[A2A3 Runtime] ERROR: Failed to allocate orch context\n");
@@ -253,10 +327,32 @@ int a2a3_runtime_execute(void* user_data) {
         return A2A3_ERROR_THREAD_CREATE;
     }
     
+    printf("[A2A3 Runtime] Step 10: Orchestration thread spawned successfully.\n");
+    fflush(stdout);
+    
     // =========================================================================
-    // 5. Wait for completion
+    // 5. Enable Execution
     // =========================================================================
-    printf("[A2A3 Runtime] Waiting for execution to complete...\n");
+    // CRITICAL: Set execution_started = true so workers can start processing tasks!
+    // Without this, workers will wait forever because can_execute = false.
+    printf("[A2A3 Runtime] Step 11: Enabling task execution...\n");
+    fflush(stdout);
+    
+    pthread_mutex_lock(&g_runtime->queue_mutex);
+    g_runtime->execution_started = true;
+    // Wake up all workers that might be waiting
+    pthread_cond_broadcast(&g_runtime->vector_queue_not_empty);
+    pthread_cond_broadcast(&g_runtime->cube_queue_not_empty);
+    pthread_mutex_unlock(&g_runtime->queue_mutex);
+    
+    printf("[A2A3 Runtime] Step 12: Task execution enabled.\n");
+    fflush(stdout);
+    
+    // =========================================================================
+    // 6. Wait for completion
+    // =========================================================================
+    printf("[A2A3 Runtime] Step 13: All threads started. Waiting for execution to complete...\n");
+    fflush(stdout);
     
     struct timespec poll_interval = {0, 10000000};  // 10ms
     int64_t last_reported = 0;
@@ -288,9 +384,10 @@ int a2a3_runtime_execute(void* user_data) {
     }
     
     // =========================================================================
-    // 6. Shutdown threads
+    // 7. Shutdown threads
     // =========================================================================
-    printf("[A2A3 Runtime] Shutting down...\n");
+    printf("[A2A3 Runtime] Step 14: Shutting down threads...\n");
+    fflush(stdout);
     g_runtime->shutdown_requested = true;
     
     // Wake up all waiting threads
@@ -314,8 +411,10 @@ int a2a3_runtime_execute(void* user_data) {
     }
     
     // =========================================================================
-    // 7. Collect stats
+    // 8. Collect stats
     // =========================================================================
+    printf("[A2A3 Runtime] Step 15: Collecting statistics...\n");
+    fflush(stdout);
     clock_gettime(CLOCK_MONOTONIC, &end_time);
     
     g_stats.total_tasks_scheduled = g_runtime->total_tasks_scheduled;

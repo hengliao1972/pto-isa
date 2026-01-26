@@ -48,6 +48,9 @@ typedef struct {
     // Orchestration function .so path
     const char* orchestration_so_path;
     
+    // Orchestration function name (NULL for default: "orchestration_entry")
+    const char* orchestration_func_name;
+    
     // InCore function directories
     const char* incore_aiv_dir;    // Directory containing AIV .so files
     const char* incore_aic_dir;    // Directory containing AIC .so files
@@ -63,6 +66,12 @@ typedef struct {
     
     // Optional: Enable debug output
     bool debug_enabled;
+    
+    // DEBUG_ORCHESTRATION mode:
+    // When enabled, only runs the orchestration function to build task graph,
+    // then returns immediately without executing tasks.
+    // The number of submitted tasks can be retrieved via a2a3_runtime_get_stats().
+    bool debug_orchestration_only;
 } A2A3RuntimeConfig;
 
 /**
@@ -71,6 +80,7 @@ typedef struct {
 static inline void a2a3_config_init_defaults(A2A3RuntimeConfig* config) {
     if (!config) return;
     config->orchestration_so_path = NULL;
+    config->orchestration_func_name = NULL;  // Default: "orchestration_entry"
     config->incore_aiv_dir = NULL;
     config->incore_aic_dir = NULL;
     config->num_orch_threads = A2A3_DEFAULT_ORCH_THREADS;
@@ -79,6 +89,7 @@ static inline void a2a3_config_init_defaults(A2A3RuntimeConfig* config) {
     config->num_aic_workers = A2A3_DEFAULT_AIC_WORKERS;
     config->user_data = NULL;
     config->debug_enabled = false;
+    config->debug_orchestration_only = false;
 }
 
 // =============================================================================

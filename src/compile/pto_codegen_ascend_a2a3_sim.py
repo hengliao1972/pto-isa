@@ -288,29 +288,26 @@ def generate_sim_main(orch_func_name: str, params: List[Tuple[str, str]]) -> str
     """Generate main function for simulation."""
     # Build parameter declarations for test data
     param_decls = []
-    param_args = []
+    param_array_setup = []
     free_stmts = []
     
-    # Track integer parameters that can be overridden via command line
-    int_params = []
-    int_param_idx = 0
-    
-    for ptype, pname in params:
+    # Track parameters and their indices
+    for i, (ptype, pname) in enumerate(params):
         if '*' in ptype:
             # Pointer - allocate test data
             base_type = ptype.replace('*', '').strip()
             param_decls.append(f"    {base_type}* {pname} = ({base_type}*)calloc(1024 * 1024, sizeof({base_type}));")
-            param_args.append(pname)
+            param_array_setup.append(f"    user_data[{i}] = (void*){pname};")
             free_stmts.append(f"    free({pname});")
         else:
             # Scalar - use default value or command line argument
             if 'int' in ptype:
-                int_params.append((pname, int_param_idx))
-                int_param_idx += 1
-                param_decls.append(f"    {ptype} {pname} = 16;  // Default, override with argv[{int_param_idx}]")
+                param_decls.append(f"    {ptype} {pname} = 16;  // Default")
             else:
-                param_decls.append(f"    {ptype} {pname} = 1.0f;  // Default test value")
-            param_args.append(pname)
+                param_decls.append(f"    {ptype} {pname} = 1.0f;  // Default")
+            param_array_setup.append(f"    user_data[{i}] = (void*)&{pname};")
+    
+    num_params = len(params)
     
     return f'''
 // =============================================================================
@@ -371,6 +368,10 @@ int main(int argc, char** argv) {{
     if (argc > 3 + arg_offset) num_tiles = atoi(argv[3 + arg_offset]);
     if (argc > 4 + arg_offset) zero = atoi(argv[4 + arg_offset]);
 
+    // Set up parameter array (void** for orchestration function)
+    void* user_data[{num_params}];
+{chr(10).join(param_array_setup)}
+
     // Print configuration
     if (!benchmark_only) {{
         printf("Configuration:\\n");
@@ -382,8 +383,8 @@ int main(int argc, char** argv) {{
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
     
-    // Call orchestration function to build task graph
-    {orch_func_name}(rt, {", ".join(param_args)});
+    // Call orchestration function to build task graph (using void** interface)
+    {orch_func_name}(rt, (void*)user_data);
     
     clock_gettime(CLOCK_MONOTONIC, &end_time);
     double orch_time_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
@@ -580,6 +581,8 @@ class PTOISAIncoreGenerator:
             lines.append("")
         
         # Generate PTO ISA instructions
+        # Set is_cube flag for instruction generation (used in TLOAD/TSTORE handling)
+        self._current_is_cube = is_cube
         for instr in mock_instructions:
             instr_lines = self._generate_instruction(instr, tile_info)
             for line in instr_lines:
@@ -591,7 +594,15 @@ class PTOISAIncoreGenerator:
     
     def _generate_tile_declarations(self, program: PTOProgram, 
                                      tile_info: Dict[str, MockTileInfo]) -> List[str]:
-        """Generate Tile declarations for local buffers."""
+        """Generate Tile declarations for local buffers.
+        
+        For cube (matmul) functions, the data flow is:
+        1. TLOAD: GM -> Mat tile
+        2. TMOV: Mat -> Left/Right tile
+        3. TMATMUL: Left + Right -> Acc
+        4. TMOV: Acc -> Mat tile
+        5. TSTORE: Mat -> GM
+        """
         decls = []
         
         # Determine if this is a cube function (matmul uses Left/Right/Acc tiles)
@@ -609,20 +620,19 @@ class PTOISAIncoreGenerator:
             # Determine TileType based on function type and tile usage
             if is_cube:
                 # For matmul: A->Left, B->Right, C->Acc
-                # Need Vec tiles for load/store and cube tiles for matmul
+                # Need Mat tiles for TLOAD/TSTORE and Left/Right/Acc for matmul
                 name_lower = name.lower()
                 if 'a' == name_lower or 'left' in name_lower:
-                    # A matrix: Vec tile for loading, Left tile for matmul
-                    decls.append(f"Tile<TileType::Vec, {dtype}, {rows}, {cols}> {name}_vec;")
+                    # A matrix: Mat tile for loading, Left tile for matmul
+                    decls.append(f"Tile<TileType::Mat, {dtype}, {rows}, {cols}> {name}_mat;")
                     decls.append(f"Tile<TileType::Left, {dtype}, {rows}, {cols}> {name};")
                 elif 'b' == name_lower or 'right' in name_lower:
-                    # B matrix: Vec tile for loading, Right tile for matmul
-                    decls.append(f"Tile<TileType::Vec, {dtype}, {rows}, {cols}> {name}_vec;")
+                    # B matrix: Mat tile for loading, Right tile for matmul
+                    decls.append(f"Tile<TileType::Mat, {dtype}, {rows}, {cols}> {name}_mat;")
                     decls.append(f"Tile<TileType::Right, {dtype}, {rows}, {cols}> {name};")
                 elif 'c' == name_lower or 'acc' in name_lower or 'out' in name_lower:
-                    # C matrix: Acc tile for matmul, Vec tile for storing
+                    # C matrix: Acc tile for matmul, TSTORE directly supports Acc->GM
                     decls.append(f"Tile<TileType::Acc, {dtype}, {rows}, {cols}> {name};")
-                    decls.append(f"Tile<TileType::Vec, {dtype}, {rows}, {cols}> {name}_vec;")
                 else:
                     # Other tiles use Vec
                     decls.append(f"Tile<TileType::Vec, {dtype}, {rows}, {cols}> {name};")
@@ -722,10 +732,21 @@ class PTOISAIncoreGenerator:
         # Memory operations
         elif op == "TLOAD":
             src_mem = operands[0]
-            lines.append(f"// TLOAD: {dst} = load({src_mem})")
-            lines.append(f"TLOAD({dst}, g_{src_mem});")
+            # For cube functions, load into _mat tile first
+            is_cube = getattr(self, '_current_is_cube', False)
+            dst_lower = dst.lower()
+            if is_cube and (dst_lower in ('a', 'b') or 'left' in dst_lower or 'right' in dst_lower):
+                # Load to Mat tile, then move to Left/Right
+                lines.append(f"// TLOAD: {dst}_mat = load({src_mem})")
+                lines.append(f"TLOAD({dst}_mat, g_{src_mem});")
+                lines.append(f"// TMOV: {dst}_mat -> {dst} (Mat -> Left/Right)")
+                lines.append(f"TMOV({dst}, {dst}_mat);")
+            else:
+                lines.append(f"// TLOAD: {dst} = load({src_mem})")
+                lines.append(f"TLOAD({dst}, g_{src_mem});")
         elif op == "TSTORE":
             src = operands[0]
+            # TSTORE supports Vec/Mat/Acc tiles directly to global memory
             lines.append(f"// TSTORE: store({src}) -> {dst}")
             lines.append(f"TSTORE(g_{dst}, {src});")
         elif op == "TCOPY":
@@ -886,16 +907,35 @@ class AscendA2A3SimCodeGenerator:
         """Generate orchestration function code."""
         lines = []
         
+        # Extract parameters
+        params = self._extract_params(program)
+        
         lines.append(f"// =============================================================================")
         lines.append(f"// Orchestration Function: {program.name}")
         lines.append(f"// Generates task graph for Ascend A2/A3 cycle-accurate simulation")
         lines.append(f"// =============================================================================")
+        lines.append(f"//")
+        lines.append(f"// Parameters passed via void** array:")
+        for i, (c_type, name) in enumerate(params):
+            lines.append(f"//   [{i}] {name} ({c_type})")
+        lines.append(f"// =============================================================================")
         lines.append("")
         
-        # Function signature
-        params = self._extract_params(program)
-        param_str = ", ".join(f"{t} {n}" for t, n in params)
-        lines.append(f"void {program.name}(PTORuntime* rt, {param_str}) {{")
+        # Function signature - standard runtime interface with void** params
+        lines.append(f"void {program.name}(PTORuntime* rt, void* user_data) {{")
+        lines.append(f"    // Unpack parameters from void** array")
+        lines.append(f"    void** params = (void**)user_data;")
+        lines.append(f"    (void)params;  // Suppress unused warning if no params")
+        lines.append("")
+        
+        # Extract each parameter from the array
+        for i, (c_type, name) in enumerate(params):
+            if '*' in c_type:
+                # Pointer type - cast directly
+                lines.append(f"    {c_type} {name} = ({c_type})params[{i}];")
+            else:
+                # Scalar type - dereference
+                lines.append(f"    {c_type} {name} = *({c_type}*)params[{i}];")
         lines.append("")
         
         # Task counter

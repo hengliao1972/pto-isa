@@ -243,11 +243,16 @@ void* a2a3_vector_worker_func(void* arg) {
     PTORuntime* rt = ctx->rt;
     int worker_id = ctx->worker_id;
     
-    DEBUG_PRINT("[A2A3 Core HW] Vector worker %d started\n", worker_id);
+    printf("[A2A3 Worker] Vector worker %d started\n", worker_id);
+    fflush(stdout);
     
 #ifdef CANN_SDK_AVAILABLE
     // Set device context for this worker thread
+    printf("[A2A3 Worker] Vector worker %d: Setting device...\n", worker_id);
+    fflush(stdout);
     aclrtSetDevice(0);
+    printf("[A2A3 Worker] Vector worker %d: Device set OK\n", worker_id);
+    fflush(stdout);
 #endif
     
     while (!rt->shutdown_requested) {
@@ -274,11 +279,16 @@ void* a2a3_cube_worker_func(void* arg) {
     PTORuntime* rt = ctx->rt;
     int worker_id = ctx->worker_id;
     
-    DEBUG_PRINT("[A2A3 Core HW] Cube worker %d started\n", worker_id);
+    printf("[A2A3 Worker] Cube worker %d started\n", worker_id);
+    fflush(stdout);
     
 #ifdef CANN_SDK_AVAILABLE
     // Set device context for this worker thread
+    printf("[A2A3 Worker] Cube worker %d: Setting device...\n", worker_id);
+    fflush(stdout);
     aclrtSetDevice(0);
+    printf("[A2A3 Worker] Cube worker %d: Device set OK\n", worker_id);
+    fflush(stdout);
 #endif
     
     while (!rt->shutdown_requested) {
@@ -522,18 +532,27 @@ void* a2a3_orch_thread_func(void* arg) {
     A2A3OrchFuncPtr orch_func = (A2A3OrchFuncPtr)ctx->orch_func;
     void* user_data = ctx->user_data;
     
-    DEBUG_PRINT("[A2A3 Orch] Orchestration thread started\n");
+    printf("[A2A3 Orch] Orchestration thread started\n");
+    fflush(stdout);
     
     if (!orch_func) {
         fprintf(stderr, "[A2A3 Orch] ERROR: No orchestration function provided!\n");
+        fflush(stderr);
         free(ctx);
         return NULL;
     }
     
+    printf("[A2A3 Orch] Orchestration function ptr: %p\n", (void*)orch_func);
+    printf("[A2A3 Orch] User data ptr: %p\n", user_data);
+    fflush(stdout);
+    
     // Execute the orchestration function
     // This will call into the runtime to build the task graph
-    DEBUG_PRINT("[A2A3 Orch] Starting orchestration function...\n");
+    printf("[A2A3 Orch] Calling orchestration function...\n");
+    fflush(stdout);
     orch_func(rt, user_data);
+    printf("[A2A3 Orch] Orchestration function returned.\n");
+    fflush(stdout);
     
     // Mark orchestration as complete
     DEBUG_PRINT("[A2A3 Orch] Orchestration function complete, scheduled %d tasks\n",

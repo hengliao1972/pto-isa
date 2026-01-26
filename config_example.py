@@ -90,6 +90,9 @@ PLATFORM_OPTIONS = {
         "script_suffix": "ascend_a2a3",
         "compiler": "gcc",
         "extension": ".c",
+        # Default: disable benchmarking for real hardware (focus on correctness first)
+        "benchmark_orchestration": False,
+        "benchmark_runtime": False,
     },
     "ascend_a5": {
         "name": "Ascend A5 NPU",
@@ -102,6 +105,9 @@ PLATFORM_OPTIONS = {
         "script_suffix": "ascend_a2a3_sim",
         "compiler": "gcc",
         "extension": ".c",
+        # Default: enable benchmarking for simulator (measure orchestration performance)
+        "benchmark_orchestration": True,
+        "benchmark_runtime": True,
     },
 }
 
@@ -460,6 +466,10 @@ def generate_code():
                 module=module
             )
             
+            # Create PTO assembly compiler for generating .pto files
+            from compile.pto_compile import PTOModuleCompiler
+            pto_compiler = PTOModuleCompiler()
+            
             for func_name, prog in module.functions.items():
                 # Determine function type
                 is_incore = getattr(prog, 'is_in_core', True)
@@ -501,6 +511,17 @@ def generate_code():
                 with open(output_file, 'w') as f:
                     f.write(code)
                 print(f"    -> {{output_file}}")
+                
+                # Generate .pto file for InCore functions (PTO assembly text format)
+                if is_incore:
+                    try:
+                        pto_code = pto_compiler.compile_function(prog)
+                        pto_file = os.path.join(target_dir, f"{{func_name}}.pto")
+                        with open(pto_file, 'w') as f:
+                            f.write(pto_code)
+                        print(f"    -> {{pto_file}}")
+                    except Exception as e:
+                        print(f"    Warning: Could not generate .pto for {{func_name}}: {{e}}")
         elif hasattr(example_module, 'main'):
             print("  Running example main()...")
             example_module.main()
@@ -715,6 +736,7 @@ int main(int argc, char** argv) {{
     
     // Set paths to compiled .so files
     config.orchestration_so_path = "generated_code/orchestration/lib_orchestration.so";
+    config.orchestration_func_name = """ + '"' + example_name + """_dynamic";  // Orchestration function name
     config.incore_aiv_dir = "generated_code/incore_aiv/";
     config.incore_aic_dir = "generated_code/incore_aic/";
     
@@ -725,6 +747,10 @@ int main(int argc, char** argv) {{
     config.num_aic_workers = 24;    // 24 AIC (Cube) workers
     
     config.debug_enabled = true;
+    
+    // DEBUG_ORCHESTRATION mode: Only run orchestration, skip task execution
+    // Set to false to test full execution with workers
+    config.debug_orchestration_only = false;  // Changed to false for full execution test
     
     printf("  Orchestration SO: %s\\\\n", config.orchestration_so_path);
     printf("  InCore AIV dir:   %s\\\\n", config.incore_aiv_dir);
@@ -814,25 +840,44 @@ int main(int argc, char** argv) {{
     printf("\\\\n[5/6] Executing orchestration function...\\\\n");
     start_time = get_time_ms();
     
-    // Create user data structure to pass buffer pointers
-    struct {{
-        void* input;
-        void* output;
-        size_t input_size;
-        size_t output_size;
-    }} user_data = {{
-        .input = dev_input,
-        .output = dev_output,
-        .input_size = TEST_INPUT_SIZE,
-        .output_size = TEST_OUTPUT_SIZE,
-    }};
+    // Allocate additional device buffers for intermediate results
+    // For bgemm: A, B, C, P0, P1, P2 (6 matrix buffers)
+    size_t matrix_size = 64 * 128 * sizeof(float);  // Default tile size
+    void* dev_P0 = a2a3_runtime_malloc(TEST_OUTPUT_SIZE);
+    void* dev_P1 = a2a3_runtime_malloc(TEST_OUTPUT_SIZE);
+    void* dev_P2 = a2a3_runtime_malloc(TEST_OUTPUT_SIZE);
     
-    ret = a2a3_runtime_execute(&user_data);
+    // Set up scalar parameters
+    int32_t seq_len = 64;
+    int32_t tile_rows = 8;
+    int32_t num_tiles = 8;
+    float zero_val = 0.0f;
+    
+    // Create void** array to pass parameters to orchestration function
+    // Order must match orchestration function's parameter extraction
+    void* user_data[16];
+    user_data[0] = dev_input;    // A matrix
+    user_data[1] = (char*)dev_input + TEST_INPUT_SIZE/2;  // B matrix (second half of input)
+    user_data[2] = dev_output;   // C matrix (output)
+    user_data[3] = dev_P0;       // P0 intermediate
+    user_data[4] = dev_P1;       // P1 intermediate
+    user_data[5] = dev_P2;       // P2 intermediate
+    user_data[6] = &seq_len;     // seq_len scalar
+    user_data[7] = &tile_rows;   // tile_rows scalar
+    user_data[8] = &num_tiles;   // num_tiles scalar
+    user_data[9] = &zero_val;    // zero scalar
+    
+    printf("  Params: seq_len=%d, tile_rows=%d, num_tiles=%d\\\\n", seq_len, tile_rows, num_tiles);
+    
+    ret = a2a3_runtime_execute(user_data);
     if (ret != A2A3_SUCCESS) {{
         fprintf(stderr, "ERROR: Execution failed: %s\\\\n",
                 a2a3_runtime_error_string(ret));
         a2a3_runtime_free(dev_input);
         a2a3_runtime_free(dev_output);
+        a2a3_runtime_free(dev_P0);
+        a2a3_runtime_free(dev_P1);
+        a2a3_runtime_free(dev_P2);
         free(host_input);
         free(host_output);
         free(host_expected);
@@ -865,12 +910,43 @@ int main(int argc, char** argv) {{
     a2a3_runtime_print_stats();
     
     // =========================================================================
+    // Save Data for Python Accuracy Verification
+    // =========================================================================
+    printf("\\\\nSaving data for accuracy verification...\\\\n");
+    
+    FILE* f_input = fopen("accuracy_input.bin", "wb");
+    FILE* f_output = fopen("accuracy_output.bin", "wb");
+    FILE* f_params = fopen("accuracy_params.txt", "w");
+    
+    if (f_input && f_output && f_params) {{
+        fwrite(host_input, 1, TEST_INPUT_SIZE, f_input);
+        fwrite(host_output, 1, TEST_OUTPUT_SIZE, f_output);
+        fprintf(f_params, "input_size=%zu\\\\n", (size_t)TEST_INPUT_SIZE);
+        fprintf(f_params, "output_size=%zu\\\\n", (size_t)TEST_OUTPUT_SIZE);
+        fprintf(f_params, "num_tiles=%d\\\\n", num_tiles);
+        fprintf(f_params, "tile_m=64\\\\n");
+        fprintf(f_params, "tile_n=128\\\\n");
+        fprintf(f_params, "tile_k=64\\\\n");
+        fprintf(f_params, "k_tiles=8\\\\n");
+        printf("  Saved: accuracy_input.bin, accuracy_output.bin, accuracy_params.txt\\\\n");
+    }} else {{
+        printf("  WARNING: Could not save accuracy data files\\\\n");
+    }}
+    
+    if (f_input) fclose(f_input);
+    if (f_output) fclose(f_output);
+    if (f_params) fclose(f_params);
+    
+    // =========================================================================
     // Cleanup
     // =========================================================================
-    printf("Cleaning up...\\\\n");
+    printf("\\\\nCleaning up...\\\\n");
     
     a2a3_runtime_free(dev_input);
     a2a3_runtime_free(dev_output);
+    a2a3_runtime_free(dev_P0);
+    a2a3_runtime_free(dev_P1);
+    a2a3_runtime_free(dev_P2);
     free(host_input);
     free(host_output);
     free(host_expected);
@@ -1055,7 +1131,11 @@ def compile_ascend_a2a3(code_dir):
     # 4. Generate and compile test program
     print("\\n  [4/4] Generating and compiling test program...")
     
-    example_name = os.path.basename(os.path.dirname(code_dir))
+    # Get example name from directory structure (e.g., "bgemm" from .../bgemm/output/platform/generated_code)
+    platform_dir = os.path.dirname(code_dir)  # .../bgemm/output/platform
+    output_dir = os.path.dirname(platform_dir)  # .../bgemm/output
+    example_dir = os.path.dirname(output_dir)  # .../bgemm
+    example_name = os.path.basename(example_dir)  # bgemm
     test_file = generate_test_program_template(code_dir, example_name)
     print(f"    Generated: {{test_file}}")
     
@@ -1092,10 +1172,17 @@ def compile_ascend_a2a3(code_dir):
     runtime_sources = [s for s in runtime_sources if os.path.exists(s)]
     
     if runtime_sources:
+        # Build link flags
+        link_flags = ["-lpthread", "-ldl"]
+        if cann_available:
+            # Add ACL runtime library when CANN SDK is available
+            link_flags.append(f"-L{{ascend_home}}/lib64")
+            link_flags.append("-lascendcl")
+        
         cmd = (
             f"gcc {{' '.join(compile_flags)}} {{' '.join(include_paths)}} "
             f"-o {{test_exe}} {{test_file}} {{' '.join(runtime_sources)}} "
-            f"-lpthread -ldl"
+            f"{{' '.join(link_flags)}}"
         )
         
         print(f"    Compiling test program...")
@@ -1176,7 +1263,7 @@ def analyze_task_dump(dump_file):
         
         # Count by type if available
         lines = content.split('\\n')
-        task_types = {{}}
+        task_types = {{{{}}}}
         for line in lines:
             if "func=" in line:
                 # Extract function name
@@ -1495,14 +1582,131 @@ def save_benchmark_results(platform_dir, benchmark_type, all_results):
 # =============================================================================
 
 def run_accuracy_test():
-    """Generate and run accuracy tests."""
+    """Generate and run accuracy tests using Python reference implementation."""
     if not CONFIG['enable_accuracy_test']:
         return True
     
     print_header("Accuracy Test")
-    print("  Accuracy testing not yet implemented")
-    print("  (Requires reference implementation)")
-    return True
+    
+    platform_dir = os.path.join(OUTPUT_DIR, CONFIG['target_platform'])
+    
+    # Check if accuracy data files exist
+    input_file = os.path.join(platform_dir, "accuracy_input.bin")
+    output_file = os.path.join(platform_dir, "accuracy_output.bin")
+    params_file = os.path.join(platform_dir, "accuracy_params.txt")
+    
+    if not os.path.exists(input_file) or not os.path.exists(output_file):
+        print("  Accuracy data files not found.")
+        print("  Run test_program first to generate accuracy_input.bin and accuracy_output.bin")
+        return True
+    
+    try:
+        import numpy as np
+    except ImportError:
+        print("  NumPy not available. Skipping accuracy test.")
+        return True
+    
+    # Read parameters
+    params = {{{{}}}}
+    if os.path.exists(params_file):
+        with open(params_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if '=' in line:
+                    key, val = line.split('=', 1)
+                    params[key] = int(val)
+    
+    # Default BGEMM parameters
+    num_tiles = params.get('num_tiles', 8)
+    tile_m = params.get('tile_m', 64)
+    tile_n = params.get('tile_n', 128)
+    tile_k = params.get('tile_k', 64)
+    k_tiles = params.get('k_tiles', 8)
+    
+    print(f"  Parameters: num_tiles={{num_tiles}}, tile_m={{tile_m}}, tile_n={{tile_n}}, tile_k={{tile_k}}, k_tiles={{k_tiles}}")
+    
+    # Read input and output data
+    input_data = np.fromfile(input_file, dtype=np.float32)
+    output_data = np.fromfile(output_file, dtype=np.float32)
+    
+    print(f"  Input size: {{len(input_data)}} floats")
+    print(f"  Output size: {{len(output_data)}} floats")
+    
+    # Split input into A and B matrices (same as test_program.c)
+    half_size = len(input_data) // 2
+    A_flat = input_data[:half_size]
+    B_flat = input_data[half_size:]
+    
+    # Compute expected output using Python reference
+    # BGEMM: For each output tile, C[tile] = sum_k(A[tile*k_tiles+k] @ B[k*num_tiles+tile])
+    print("  Computing Python reference...")
+    
+    tile_size = tile_m * tile_n
+    expected_output = np.zeros(num_tiles * tile_size, dtype=np.float32)
+    
+    for tile in range(num_tiles):
+        # Accumulate partial products for this tile
+        C_tile = np.zeros((tile_m, tile_n), dtype=np.float32)
+        
+        for k in range(k_tiles):
+            # Get A tile: A[tile * k_tiles + k]
+            a_idx = (tile * k_tiles + k) * tile_m * tile_k
+            if a_idx + tile_m * tile_k <= len(A_flat):
+                A_tile = A_flat[a_idx : a_idx + tile_m * tile_k].reshape(tile_m, tile_k)
+            else:
+                A_tile = np.zeros((tile_m, tile_k), dtype=np.float32)
+            
+            # Get B tile: B[k * num_tiles + tile]
+            b_idx = (k * num_tiles + tile) * tile_k * tile_n
+            if b_idx + tile_k * tile_n <= len(B_flat):
+                B_tile = B_flat[b_idx : b_idx + tile_k * tile_n].reshape(tile_k, tile_n)
+            else:
+                B_tile = np.zeros((tile_k, tile_n), dtype=np.float32)
+            
+            # Accumulate: C += A @ B
+            C_tile += np.matmul(A_tile, B_tile)
+        
+        # Store result
+        expected_output[tile * tile_size : (tile + 1) * tile_size] = C_tile.flatten()
+    
+    # Compare results
+    output_elements = num_tiles * tile_size
+    actual = output_data[:output_elements]
+    expected = expected_output[:output_elements]
+    
+    # Compute differences
+    diff = np.abs(expected - actual)
+    max_diff = np.max(diff)
+    max_diff_idx = np.argmax(diff)
+    
+    # Use relative tolerance for floating point
+    rtol = 1e-3  # Relative tolerance
+    atol = 1e-5  # Absolute tolerance
+    
+    # Check for errors
+    errors = np.sum(diff > (atol + rtol * np.abs(expected)))
+    
+    print(f"  Max difference: {{max_diff:.6f}} at index {{max_diff_idx}}")
+    print(f"  Expected[{{max_diff_idx}}]: {{expected[max_diff_idx]:.6f}}")
+    print(f"  Actual[{{max_diff_idx}}]: {{actual[max_diff_idx]:.6f}}")
+    
+    if errors > 0:
+        # Show first few mismatches
+        mismatch_indices = np.where(diff > (atol + rtol * np.abs(expected)))[0][:10]
+        for idx in mismatch_indices:
+            print(f"    Mismatch at [{{idx}}]: expected {{expected[idx]:.6f}}, got {{actual[idx]:.6f}}")
+    
+    print()
+    print("=" * 60)
+    if errors == 0:
+        print("  ACCURACY TEST: PASSED")
+        result = True
+    else:
+        print(f"  ACCURACY TEST: FAILED ({{errors}} errors out of {{output_elements}})")
+        result = False
+    print("=" * 60)
+    
+    return result
 
 
 # =============================================================================
@@ -1748,6 +1952,12 @@ def main():
             selected = select_platform()
             if selected:
                 config['target_platform'] = selected
+                # Apply platform-specific default overrides
+                platform_info = PLATFORM_OPTIONS.get(selected, {})
+                if 'benchmark_orchestration' in platform_info:
+                    config['benchmark_orchestration'] = platform_info['benchmark_orchestration']
+                if 'benchmark_runtime' in platform_info:
+                    config['benchmark_runtime'] = platform_info['benchmark_runtime']
             input("Press Enter to continue...")
             
         elif choice == '3':
@@ -1834,7 +2044,14 @@ def run_cli(args):
     config['example_name'] = args.example
     config['target_platform'] = args.platform
     
-    # Apply optional arguments
+    # Apply platform-specific default overrides
+    platform_info = PLATFORM_OPTIONS.get(args.platform, {})
+    if 'benchmark_orchestration' in platform_info:
+        config['benchmark_orchestration'] = platform_info['benchmark_orchestration']
+    if 'benchmark_runtime' in platform_info:
+        config['benchmark_runtime'] = platform_info['benchmark_runtime']
+    
+    # Apply optional arguments (these override platform defaults)
     if args.seq_len_min is not None:
         config['test_seq_len_min'] = args.seq_len_min
     if args.seq_len_max is not None:
