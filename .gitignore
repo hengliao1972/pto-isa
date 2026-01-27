@@ -29,9 +29,8 @@ examples/*/output/
 core*_*.dump
 profile_*_log*.toml
 
-# Keep vendored PTO-AS sources ignored by default (they are large).
-ptoas
-pto_as
+# PTO-AS Python sources and DSL live in-repo; ignore local build artifacts only.
+ptoas/mlir/build/
 
 # But do commit the launcher + prebuilt binaries under `bin/`.
 !bin/ptoas

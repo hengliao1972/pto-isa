@@ -33,3 +33,9 @@ python3 examples/bgemm/pto_bgemm_adaptive.py \
   --device 0 --aic-blocks 24 \
   --allow-unaligned --batch 2 --m 4097 --n 6150 --k 4101 --grid-m 4 --grid-n 6
 ```
+
+## Legacy codegen runners (optional)
+
+This folder also contains auto-generated `run_*.py` scripts (ARM64/CUDA/Ascend simulator).
+Those use the older direct-codegen path (`src/compile`) and require a `pto_*.py` module
+that exposes `create_*_module()` / `create_module()` — provided by `pto_bgemm_codegen.py`.
