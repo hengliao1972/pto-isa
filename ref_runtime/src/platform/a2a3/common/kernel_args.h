@@ -1,13 +1,16 @@
 /**
  * KernelArgs Structure - Shared between Host, AICPU, and AICore
  *
- * This structure is used to pass arguments to both AICPU and AICore kernels.
- * It contains pointers to device memory for arguments and graph data.
+ * NOTE:
+ * The built-in AICPU launcher (`libaicpu_extend_kernels.so` + DynTileFwkKernelServer*)
+ * expects the argument layout of `DeviceKernelArgs` and `DeviceArgs` (cfgdata),
+ * matching the TileFwk / PyPTO ABI.
  *
- * Memory Layout:
- * This structure's layout is hardcoded in libaicpu_extend_kernels.so, which
- * expects specific offsets for deviceArgs fields. The unused[5] array provides
- * the required offset alignment for compatibility with the CANN runtime.
+ * This repo uses only a minimal subset of that ABI:
+ * - `DeviceArgs.aicpuSoBin/aicpuSoLen` carries the in-device bytes of the backend server .so
+ * - `DeviceArgs.opaque` carries a pointer to `PtoRuntimeArgs` (our own mailbox)
+ * - `PtoRuntimeArgs` carries the runtime pointers for the simplified graph scheduler:
+ *   handshake array + graph pointer.
  */
 
 #ifndef RUNTIME_COMMON_KERNEL_ARGS_H
@@ -15,38 +18,94 @@
 
 #include <cstdint>
 
-// Forward declaration
 class Graph;
+struct Handshake;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Keep these definitions ABI-compatible with the TileFwk layout used by the
+// built-in kernel servers on Ascend devices.
 
-/**
- * Kernel arguments structure
- *
- * This structure is passed to both AICPU and AICore kernels by the host.
- *
- * Field Access Patterns:
- * - unused[5]: Padding for alignment with CANN runtime expectations
- * - deviceArgs: Written by host, read by AICPU (contains aicpuSoBin/aicpuSoLen)
- * - hankArgs: Written by host, read/written by AICPU and AICore (handshake array)
- * - core_num: Written by host, read by AICPU (number of AICore instances)
- * - graphArgs: Written by host, read by AICPU (task graph structure)
- *
- * Note: AICore kernels receive handshake buffers directly, not this structure.
- */
-struct KernelArgs {
-    uint64_t unused[5] = {0};        // Alignment padding (required by CANN runtime offset)
-    int64_t *deviceArgs{nullptr};    // Device arguments (AICPU reads, contains SO info)
-    int64_t *runtime{nullptr};       // Runtime context (AICPU reads)
-    int64_t core_num;                // Number of AICore instances
-    int64_t *hankArgs{nullptr};      // Handshake buffer array (shared AICPU/AICore)
-    Graph *graphArgs{nullptr};       // Task graph in device memory (AICPU reads)
+// Minimal profiling config (kept for layout compatibility).
+struct ToSubMachineConfig {
+    uint32_t profConfig{0};
 };
 
-#ifdef __cplusplus
-}
-#endif
+struct OpMetaAddrs {
+    uint64_t generalAddr{0};
+    uint64_t stitchPoolAddr{0};
+};
+
+enum class ArchInfo {
+    DAV_1001 = 1001,
+    DAV_2201 = 2201,
+    DAV_3510 = 3510,
+    DAV_UNKNOWN,
+};
+
+// Device-side args blob (`cfgdata` in DeviceKernelArgs).
+// This matches the layout used by TileFwk's dynamic launchers (PyPTO).
+struct DeviceArgs {
+    uint32_t nrAic{0};
+    uint32_t nrAiv{0};
+    uint32_t nrAicpu{0};
+    uint32_t nrValidAic{0};
+    uint64_t opaque{0};
+    uint64_t devQueueAddr{0};
+    uint64_t sharedBuffer{0};
+    uint64_t coreRegAddr{0};
+    uint64_t corePmuRegAddr{0};
+    uint64_t corePmuAddr{0};
+    uint64_t pmuEventAddr{0};
+    uint64_t taskType : 4;
+    uint64_t machineConfig : 8;
+    uint64_t taskId : 52;
+    uint64_t taskData{0};
+    uint64_t taskWastTime{0};
+    uint64_t aicpuSoBin{0};
+    uint64_t aicpuSoLen{0};
+    uint64_t deviceId{0};
+    uint64_t startArgsAddr{0};
+    uint64_t taskQueue{0};
+    uint64_t taskCtrl{0};
+    uint32_t scheCpuNum{0};
+    uint32_t enableCtrl : 2;
+    uint32_t validGetPgMask : 2;
+    uint32_t disableSync : 28;
+    uint64_t generalAddr{0};
+    uint64_t stitchPoolAddr{0};
+    uint64_t aicpuPerfAddr{0};
+    ArchInfo archInfo{ArchInfo::DAV_2201};
+    ToSubMachineConfig toSubMachineConfig{};
+
+    uint64_t GetBlockNum() const {
+        if (nrAic == 0) {
+            return 0;
+        }
+        return static_cast<uint64_t>(nrValidAic) * (static_cast<uint64_t>(nrAiv) / static_cast<uint64_t>(nrAic) + 1ULL);
+    }
+};
+
+// Host->AICPU launch args (first field of the struct passed to rtAicpuKernelLaunchExWithArgs).
+// The built-in AICPU launcher passes this pointer through to the backend server.
+struct DeviceKernelArgs {
+    int64_t *ctrlFlowCache{nullptr};
+    int64_t *inputs{nullptr};
+    int64_t *outputs{nullptr};
+    int64_t *workspace{nullptr};
+    int64_t *tilingdata{nullptr};
+    int64_t *cfgdata{nullptr};
+    void *costmodeldata{nullptr};
+    void *aicoreModel{nullptr};
+    uint64_t taskWastTime{0};
+    uint8_t machineConfig{0};
+    ToSubMachineConfig toSubMachineConfig{};
+    OpMetaAddrs opMetaAddrs{};
+};
+
+// PTO-ISA runtime mailbox (owned by this repo; stored in DeviceArgs.opaque).
+struct PtoRuntimeArgs {
+    Handshake *hankArgs{nullptr};
+    Graph *graphArgs{nullptr};
+    int64_t core_num{0};
+};
 
 #endif  // RUNTIME_COMMON_KERNEL_ARGS_H

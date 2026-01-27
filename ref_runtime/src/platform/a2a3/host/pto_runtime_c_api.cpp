@@ -8,6 +8,8 @@
 #include "pto_runtime_c_api.h"
 #include "devicerunner.h"
 #include "graph.h"  // Included from tests/example_graph_impl via CMake include paths
+#include <algorithm>
+#include <new>
 
 extern "C" {
 
@@ -16,6 +18,67 @@ extern "C" {
 /* =========================================================================== */
 int InitGraphImpl(Graph **graph);
 int ValidateGraphImpl(Graph *graph);
+
+GraphHandle Graph_Create(void) {
+    try {
+        return static_cast<GraphHandle>(new (std::nothrow) Graph());
+    } catch (...) {
+        return NULL;
+    }
+}
+
+int Graph_Destroy(GraphHandle graph) {
+    if (graph == NULL) {
+        return -1;
+    }
+    try {
+        delete static_cast<Graph*>(graph);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int Graph_AddTask(GraphHandle graph,
+                  const uint64_t* args,
+                  int num_args,
+                  int func_id,
+                  int core_type) {
+    if (graph == NULL) {
+        return -1;
+    }
+    try {
+        Graph* g = static_cast<Graph*>(graph);
+        return g->add_task(const_cast<uint64_t*>(args), num_args, func_id, core_type);
+    } catch (...) {
+        return -1;
+    }
+}
+
+int Graph_AddSuccessor(GraphHandle graph, int from_task, int to_task) {
+    if (graph == NULL) {
+        return -1;
+    }
+    try {
+        Graph* g = static_cast<Graph*>(graph);
+        g->add_successor(from_task, to_task);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int Graph_GetTaskCount(GraphHandle graph) {
+    if (graph == NULL) {
+        return -1;
+    }
+    try {
+        Graph* g = static_cast<Graph*>(graph);
+        return g->get_task_count();
+    } catch (...) {
+        return -1;
+    }
+}
 
 int InitGraph(GraphHandle graph) {
     if (graph == NULL) {
@@ -45,6 +108,51 @@ int ValidateGraph(GraphHandle graph) {
 /* =========================================================================== */
 /* DeviceRunner API Implementation */
 /* =========================================================================== */
+
+void* DeviceRunner_AllocateTensor(size_t bytes) {
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        return runner.AllocateTensor(bytes);
+    } catch (...) {
+        return NULL;
+    }
+}
+
+void DeviceRunner_FreeTensor(void* dev_ptr) {
+    if (dev_ptr == NULL) {
+        return;
+    }
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        runner.FreeTensor(dev_ptr);
+    } catch (...) {
+        return;
+    }
+}
+
+int DeviceRunner_CopyToDevice(void* dev_ptr, const void* host_ptr, size_t bytes) {
+    if (dev_ptr == NULL || host_ptr == NULL) {
+        return -1;
+    }
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        return runner.CopyToDevice(dev_ptr, host_ptr, bytes);
+    } catch (...) {
+        return -1;
+    }
+}
+
+int DeviceRunner_CopyFromDevice(void* host_ptr, const void* dev_ptr, size_t bytes) {
+    if (dev_ptr == NULL || host_ptr == NULL) {
+        return -1;
+    }
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        return runner.CopyFromDevice(host_ptr, dev_ptr, bytes);
+    } catch (...) {
+        return -1;
+    }
+}
 
 int DeviceRunner_Init(int device_id,
                       const uint8_t* aicpu_binary, size_t aicpu_size,
@@ -94,6 +202,64 @@ int DeviceRunner_Finalize(void) {
     try {
         DeviceRunner& runner = DeviceRunner::Get();
         return runner.Finalize();
+    } catch (...) {
+        return -1;
+    }
+}
+
+int DeviceRunner_SetProfileEnabled(int enabled) {
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        runner.SetProfileEnabled(enabled != 0);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int DeviceRunner_ProfileEnabled(void) {
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        return runner.ProfileEnabled() ? 1 : 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int DeviceRunner_HasLastProfile(void) {
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        return runner.HasLastProfile() ? 1 : 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int DeviceRunner_GetLastProfile(PtoTaskProfileRecord* out_records, int max_records) {
+    try {
+        DeviceRunner& runner = DeviceRunner::Get();
+        const std::vector<TaskProfileRecord> profile = runner.GetLastProfile();
+        const int n = static_cast<int>(profile.size());
+        if (out_records == NULL || max_records <= 0) {
+            return n;
+        }
+        const int m = std::min(n, max_records);
+        for (int i = 0; i < m; i++) {
+            const TaskProfileRecord& src = profile[static_cast<size_t>(i)];
+            PtoTaskProfileRecord& dst = out_records[i];
+            dst.task_id = src.task_id;
+            dst.func_id = src.func_id;
+            dst.core_type = src.core_type;
+            dst.exec_core_id = src.exec_core_id;
+            dst.exec_core_type = src.exec_core_type;
+            dst.exec_phys_core_id = src.exec_phys_core_id;
+            dst.start_time = src.start_time;
+            dst.end_time = src.end_time;
+            for (size_t j = 0; j < PTO_PROFILE_PMU_CNT; j++) {
+                dst.pmu_cnt[j] = src.pmu_cnt[j];
+            }
+        }
+        return m;
     } catch (...) {
         return -1;
     }

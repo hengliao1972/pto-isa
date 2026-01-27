@@ -18,13 +18,6 @@ from ptoas.python.host_spec import prepend_host_spec_to_pto  # noqa: E402
 
 
 def _default_ptoas(repo: Path) -> Path:
-    for p in (
-        repo / "bin/ptoas",
-        repo / "ptoas/mlir/build-macos/bin/ptoas",
-        repo / "ptoas/mlir/build/bin/ptoas",
-    ):
-        if p.exists():
-            return p
     return repo / "bin/ptoas"
 
 

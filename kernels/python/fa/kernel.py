@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from pto_as import PTO
-from ptoas.python.ast_frontend import KernelSpec, compile_kernel_spec
+from pto import PTO, KernelSpec, compile_kernel_spec
 
 
 def fa16():

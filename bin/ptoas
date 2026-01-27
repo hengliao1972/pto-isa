@@ -16,6 +16,10 @@ esac
 exe="$(cd "$(dirname "$0")" && pwd)/${subdir}/ptoas"
 if [[ ! -x "$exe" ]]; then
   echo "error: ptoas binary not found or not executable: $exe" >&2
+  readme="$(dirname "$exe")/README.md"
+  if [[ -f "$readme" ]]; then
+    echo "hint: see $readme" >&2
+  fi
   exit 2
 fi
 exec "$exe" "$@"

@@ -1,9 +1,13 @@
 /**
- * Minimal AICore Kernel
+ * Minimal AICore Kernel (task graph worker) with optional per-task profiling
  */
 
  #include <cstdint>
  #include "graph.h"
+
+ #if defined(__CCE__) && defined(__clang__)
+ #include <cce_aicore_intrinsics.h>
+ #endif
 
  #ifndef __gm__
  #define __gm__
@@ -34,6 +38,22 @@
  #endif
 
  [[block_local]] int blockIdx;
+
+ __aicore__ __attribute__((always_inline)) static inline void RefreshHandshake(__gm__ volatile Handshake *hank) {
+     dcci((__gm__ void *)hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+ }
+
+ __aicore__ __attribute__((always_inline)) static inline void FlushHandshake(__gm__ volatile Handshake *hank) {
+     dcci((__gm__ void *)hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+ }
+
+ __aicore__ __attribute__((always_inline)) static inline uint64_t ReadDeviceClock() {
+ #if defined(__CCE__) && defined(__clang__)
+     return static_cast<uint64_t>(get_sys_cnt());
+ #else
+     return 0;
+ #endif
+ }
 
  /**
   * Unified function pointer type for kernel dispatch
@@ -104,19 +124,20 @@
  #endif
 
      // Get this core's handshake buffer
-     __gm__ Handshake* my_hank = &hank[blockIdx];
+     __gm__ volatile Handshake* my_hank = &hank[blockIdx];
 
      // Phase 1: Wait for AICPU initialization signal
      while (my_hank->aicpu_ready == 0) {
-         dcci(my_hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+         RefreshHandshake(my_hank);
      }
 
      // Phase 2: Signal AICore is ready (use core_id + 1 to avoid 0)
      my_hank->aicore_done = blockIdx + 1;
+     FlushHandshake(my_hank);
 
      // Phase 3: Main execution loop - poll for tasks until quit signal
      while (true) {
-         dcci(my_hank, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+         RefreshHandshake(my_hank);
 
          // Check for quit command from AICPU
          if (my_hank->control == 1) {
@@ -124,11 +145,31 @@
          }
 
          // Execute task if assigned (task != 0 means valid Task* pointer)
-         if (my_hank->task != 0) {
+         if (my_hank->task != 0 && my_hank->task_status != 0) {
              __gm__ Task* task_ptr = reinterpret_cast<__gm__ Task*>(my_hank->task);
-             execute_task(task_ptr);
+             if (my_hank->profile_enable != 0) {
+                 task_ptr->profile.exec_core_id = static_cast<uint32_t>(blockIdx);
+ #ifdef __AIV__
+                 task_ptr->profile.exec_core_type = 2;
+ #else
+                 task_ptr->profile.exec_core_type = 1;
+ #endif
+                 task_ptr->profile.exec_phys_core_id = static_cast<uint32_t>(get_coreid());
+
+                 const uint64_t t0 = ReadDeviceClock();
+                 task_ptr->profile.start_time = t0;
+                 task_ptr->profile.end_time = 0;
+                 execute_task(task_ptr);
+                 const uint64_t t1 = ReadDeviceClock();
+                 task_ptr->profile.end_time = t1;
+                 task_ptr->profile.pmu_cnt[0] = static_cast<uint32_t>(t1 - t0);
+                 dcci((__gm__ void *)&task_ptr->profile, ENTIRE_DATA_CACHE, CACHELINE_OUT);
+             } else {
+                 execute_task(task_ptr);
+             }
              // Mark task as complete (task_status: 0=idle, 1=busy)
              my_hank->task_status = 0;
+             FlushHandshake(my_hank);
          }
      }
  }

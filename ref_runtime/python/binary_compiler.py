@@ -48,13 +48,38 @@ class BinaryCompiler:
             EnvironmentError: If ASCEND_HOME_PATH is not set
             FileNotFoundError: If compiler or linker not found
         """
-        cc_path = os.path.join(self.ascend_home_path, "bin", "ccec")
-        ld_path = os.path.join(self.ascend_home_path, "bin", "ld.lld")
+        def _find_first(paths: List[str]) -> str:
+            for p in paths:
+                if os.path.isfile(p):
+                    return p
+            return ""
 
-        if not os.path.isfile(cc_path):
-            raise FileNotFoundError(f"Compiler not found: {cc_path}")
-        if not os.path.isfile(ld_path):
-            raise FileNotFoundError(f"Linker not found: {ld_path}")
+        # CANN installs vary: some expose `bin/ccec`, others put it under
+        # `compiler/ccec_compiler/bin/`. Prefer `ccec`/`ld.lld` but fall back
+        # to the underlying tool names where needed.
+        cc_path = _find_first([
+            os.path.join(self.ascend_home_path, "bin", "ccec"),
+            os.path.join(self.ascend_home_path, "compiler", "ccec_compiler", "bin", "ccec"),
+            os.path.join(self.ascend_home_path, "aarch64-linux", "ccec_compiler", "bin", "ccec"),
+            os.path.join(self.ascend_home_path, "compiler", "ccec_compiler", "bin", "bisheng"),
+        ])
+        ld_path = _find_first([
+            os.path.join(self.ascend_home_path, "bin", "ld.lld"),
+            os.path.join(self.ascend_home_path, "compiler", "ccec_compiler", "bin", "ld.lld"),
+            os.path.join(self.ascend_home_path, "aarch64-linux", "ccec_compiler", "bin", "ld.lld"),
+            os.path.join(self.ascend_home_path, "compiler", "ccec_compiler", "bin", "lld"),
+        ])
+
+        if not cc_path:
+            raise FileNotFoundError(
+                "AICore compiler not found under ASCEND_HOME_PATH. Tried: "
+                f"{self.ascend_home_path}/bin/ccec and compiler/ccec_compiler/bin/ccec"
+            )
+        if not ld_path:
+            raise FileNotFoundError(
+                "AICore linker not found under ASCEND_HOME_PATH. Tried: "
+                f"{self.ascend_home_path}/bin/ld.lld and compiler/ccec_compiler/bin/ld.lld"
+            )
 
         aicore_dir = Path(__file__).parent.parent / "src" / "platform" / "a2a3" / "aicore"
 
@@ -72,12 +97,31 @@ class BinaryCompiler:
             EnvironmentError: If ASCEND_HOME_PATH is not set
             FileNotFoundError: If cross-compiler not found
         """
-        cc_path = os.path.join(self.ascend_home_path, "tools", "hcc", "bin", "aarch64-target-linux-gnu-gcc")
-        cxx_path = os.path.join(self.ascend_home_path, "tools", "hcc", "bin", "aarch64-target-linux-gnu-g++")
-        if not os.path.isfile(cc_path):
-            raise FileNotFoundError(f"AICPU C compiler not found: {cc_path}")
-        if not os.path.isfile(cxx_path):
-            raise FileNotFoundError(f"AICPU C++ compiler not found: {cxx_path}")
+        # Some CANN installs ship `tools/hcc/...` cross-compilers; others rely on
+        # system toolchains. Fall back to system aarch64 toolchains if needed.
+        cc_candidates = [
+            os.path.join(self.ascend_home_path, "tools", "hcc", "bin", "aarch64-target-linux-gnu-gcc"),
+            "aarch64-linux-gnu-gcc",
+            "gcc",
+        ]
+        cxx_candidates = [
+            os.path.join(self.ascend_home_path, "tools", "hcc", "bin", "aarch64-target-linux-gnu-g++"),
+            "aarch64-linux-gnu-g++",
+            "g++",
+        ]
+
+        cc_path = next((p for p in cc_candidates if self._find_executable(p)), "")
+        cxx_path = next((p for p in cxx_candidates if self._find_executable(p)), "")
+        if not cc_path:
+            raise FileNotFoundError(
+                "AICPU C compiler not found. Tried: "
+                + ", ".join(cc_candidates)
+            )
+        if not cxx_path:
+            raise FileNotFoundError(
+                "AICPU C++ compiler not found. Tried: "
+                + ", ".join(cxx_candidates)
+            )
 
         aicpu_dir = Path(__file__).parent.parent / "src" / "platform" / "a2a3" / "aicpu"
 

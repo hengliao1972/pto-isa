@@ -22,13 +22,6 @@ from kernels.python.gemm_performance.kernel import make_gemm_performance_kernel 
 
 
 def _default_ptoas() -> Path:
-    for p in (
-        _REPO_ROOT / "bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build/bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build-macos/bin/ptoas",
-    ):
-        if p.exists():
-            return p
     return _REPO_ROOT / "bin/ptoas"
 
 

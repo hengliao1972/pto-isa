@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="530">
+<rect x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+<text x="10" y="18" font-family="monospace" font-size="13">BGEMM trace (batch=2 m=6144 n=6144 k=6144, grid=4x6, block_dim=48)</text>
+<text x="10" y="36" font-family="monospace" font-size="11">time unit: us (tick_hz=20000000.000)</text>
+<line x1="160" y1="494" x2="1380" y2="494" stroke="#222222"/>
+<text x="160" y="522" font-family="monospace" font-size="11">time (us)</text>
+<line x1="160.00" y1="46" x2="160.00" y2="494" stroke="#eeeeee"/>
+<line x1="160.00" y1="494" x2="160.00" y2="498" stroke="#222222"/>
+<text x="160.00" y="512" text-anchor="middle" font-family="monospace" font-size="10">0</text>
+<line x1="386.72" y1="46" x2="386.72" y2="494" stroke="#eeeeee"/>
+<line x1="386.72" y1="494" x2="386.72" y2="498" stroke="#222222"/>
+<text x="386.72" y="512" text-anchor="middle" font-family="monospace" font-size="10">5000</text>
+<line x1="613.45" y1="46" x2="613.45" y2="494" stroke="#eeeeee"/>
+<line x1="613.45" y1="494" x2="613.45" y2="498" stroke="#222222"/>
+<text x="613.45" y="512" text-anchor="middle" font-family="monospace" font-size="10">10000</text>
+<line x1="840.17" y1="46" x2="840.17" y2="494" stroke="#eeeeee"/>
+<line x1="840.17" y1="494" x2="840.17" y2="498" stroke="#222222"/>
+<text x="840.17" y="512" text-anchor="middle" font-family="monospace" font-size="10">15000</text>
+<line x1="1066.89" y1="46" x2="1066.89" y2="494" stroke="#eeeeee"/>
+<line x1="1066.89" y1="494" x2="1066.89" y2="498" stroke="#222222"/>
+<text x="1066.89" y="512" text-anchor="middle" font-family="monospace" font-size="10">20000</text>
+<line x1="1293.62" y1="46" x2="1293.62" y2="494" stroke="#eeeeee"/>
+<line x1="1293.62" y1="494" x2="1293.62" y2="498" stroke="#222222"/>
+<text x="1293.62" y="512" text-anchor="middle" font-family="monospace" font-size="10">25000</text>
+<text x="10" y="64" font-family="monospace" font-size="10">core 0</text>
+<line x1="160" y1="60" x2="1380" y2="60" stroke="#f3f3f3"/>
+<text x="10" y="82" font-family="monospace" font-size="10">core 1</text>
+<line x1="160" y1="78" x2="1380" y2="78" stroke="#f3f3f3"/>
+<text x="10" y="100" font-family="monospace" font-size="10">core 2</text>
+<line x1="160" y1="96" x2="1380" y2="96" stroke="#f3f3f3"/>
+<text x="10" y="118" font-family="monospace" font-size="10">core 3</text>
+<line x1="160" y1="114" x2="1380" y2="114" stroke="#f3f3f3"/>
+<text x="10" y="136" font-family="monospace" font-size="10">core 4</text>
+<line x1="160" y1="132" x2="1380" y2="132" stroke="#f3f3f3"/>
+<text x="10" y="154" font-family="monospace" font-size="10">core 5</text>
+<line x1="160" y1="150" x2="1380" y2="150" stroke="#f3f3f3"/>
+<text x="10" y="172" font-family="monospace" font-size="10">core 6</text>
+<line x1="160" y1="168" x2="1380" y2="168" stroke="#f3f3f3"/>
+<text x="10" y="190" font-family="monospace" font-size="10">core 7</text>
+<line x1="160" y1="186" x2="1380" y2="186" stroke="#f3f3f3"/>
+<text x="10" y="208" font-family="monospace" font-size="10">core 8</text>
+<line x1="160" y1="204" x2="1380" y2="204" stroke="#f3f3f3"/>
+<text x="10" y="226" font-family="monospace" font-size="10">core 9</text>
+<line x1="160" y1="222" x2="1380" y2="222" stroke="#f3f3f3"/>
+<text x="10" y="244" font-family="monospace" font-size="10">core 10</text>
+<line x1="160" y1="240" x2="1380" y2="240" stroke="#f3f3f3"/>
+<text x="10" y="262" font-family="monospace" font-size="10">core 11</text>
+<line x1="160" y1="258" x2="1380" y2="258" stroke="#f3f3f3"/>
+<text x="10" y="280" font-family="monospace" font-size="10">core 12</text>
+<line x1="160" y1="276" x2="1380" y2="276" stroke="#f3f3f3"/>
+<text x="10" y="298" font-family="monospace" font-size="10">core 13</text>
+<line x1="160" y1="294" x2="1380" y2="294" stroke="#f3f3f3"/>
+<text x="10" y="316" font-family="monospace" font-size="10">core 14</text>
+<line x1="160" y1="312" x2="1380" y2="312" stroke="#f3f3f3"/>
+<text x="10" y="334" font-family="monospace" font-size="10">core 15</text>
+<line x1="160" y1="330" x2="1380" y2="330" stroke="#f3f3f3"/>
+<text x="10" y="352" font-family="monospace" font-size="10">core 16</text>
+<line x1="160" y1="348" x2="1380" y2="348" stroke="#f3f3f3"/>
+<text x="10" y="370" font-family="monospace" font-size="10">core 17</text>
+<line x1="160" y1="366" x2="1380" y2="366" stroke="#f3f3f3"/>
+<text x="10" y="388" font-family="monospace" font-size="10">core 18</text>
+<line x1="160" y1="384" x2="1380" y2="384" stroke="#f3f3f3"/>
+<text x="10" y="406" font-family="monospace" font-size="10">core 19</text>
+<line x1="160" y1="402" x2="1380" y2="402" stroke="#f3f3f3"/>
+<text x="10" y="424" font-family="monospace" font-size="10">core 20</text>
+<line x1="160" y1="420" x2="1380" y2="420" stroke="#f3f3f3"/>
+<text x="10" y="442" font-family="monospace" font-size="10">core 21</text>
+<line x1="160" y1="438" x2="1380" y2="438" stroke="#f3f3f3"/>
+<text x="10" y="460" font-family="monospace" font-size="10">core 22</text>
+<line x1="160" y1="456" x2="1380" y2="456" stroke="#f3f3f3"/>
+<text x="10" y="478" font-family="monospace" font-size="10">core 23</text>
+<line x1="160" y1="474" x2="1380" y2="474" stroke="#f3f3f3"/>
+<rect x="160.00" y="52.00" width="608.12" height="16" fill="hsl(0.000, 75%, 55%)" opacity="0.88"><title>task 0 on core 0: start=0us dur=13411us</title></rect>
+<text x="464.06" y="65.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t0</text>
+<rect x="773.56" y="466.00" width="606.44" height="16" fill="hsl(137.508, 75%, 55%)" opacity="0.88"><title>task 1 on core 23: start=13531us dur=13374us</title></rect>
+<text x="1076.78" y="479.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t1</text>
+<rect x="773.42" y="448.00" width="606.58" height="16" fill="hsl(275.016, 75%, 55%)" opacity="0.88"><title>task 2 on core 22: start=13528us dur=13377us</title></rect>
+<text x="1076.71" y="461.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t2</text>
+<rect x="773.24" y="430.00" width="606.76" height="16" fill="hsl(52.524, 75%, 55%)" opacity="0.88"><title>task 3 on core 21: start=13524us dur=13381us</title></rect>
+<text x="1076.62" y="443.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t3</text>
+<rect x="772.43" y="52.00" width="568.08" height="16" fill="hsl(190.032, 75%, 55%)" opacity="0.88"><title>task 4 on core 0: start=13506us dur=12528us</title></rect>
+<text x="1056.47" y="65.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t4</text>
+<rect x="763.45" y="412.00" width="577.06" height="16" fill="hsl(327.540, 75%, 55%)" opacity="0.88"><title>task 5 on core 20: start=13308us dur=12726us</title></rect>
+<text x="1051.98" y="425.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t5</text>
+<rect x="763.27" y="394.00" width="577.24" height="16" fill="hsl(105.048, 75%, 55%)" opacity="0.88"><title>task 6 on core 19: start=13304us dur=12730us</title></rect>
+<text x="1051.89" y="407.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t6</text>
+<rect x="763.13" y="376.00" width="577.37" height="16" fill="hsl(242.556, 75%, 55%)" opacity="0.88"><title>task 7 on core 18: start=13301us dur=12733us</title></rect>
+<text x="1051.82" y="389.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t7</text>
+<rect x="762.95" y="358.00" width="591.25" height="16" fill="hsl(20.064, 75%, 55%)" opacity="0.88"><title>task 8 on core 17: start=13297us dur=13039us</title></rect>
+<text x="1058.57" y="371.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t8</text>
+<rect x="762.77" y="340.00" width="591.30" height="16" fill="hsl(157.572, 75%, 55%)" opacity="0.88"><title>task 9 on core 16: start=13293us dur=13040us</title></rect>
+<text x="1058.42" y="353.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t9</text>
+<rect x="762.36" y="322.00" width="591.70" height="16" fill="hsl(295.080, 75%, 55%)" opacity="0.88"><title>task 10 on core 15: start=13284us dur=13049us</title></rect>
+<text x="1058.21" y="335.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t10</text>
+<rect x="762.27" y="304.00" width="591.79" height="16" fill="hsl(72.588, 75%, 55%)" opacity="0.88"><title>task 11 on core 14: start=13282us dur=13051us</title></rect>
+<text x="1058.17" y="317.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t11</text>
+<rect x="762.09" y="286.00" width="594.88" height="16" fill="hsl(210.096, 75%, 55%)" opacity="0.88"><title>task 12 on core 13: start=13278us dur=13119us</title></rect>
+<text x="1059.53" y="299.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t12</text>
+<rect x="761.91" y="268.00" width="595.06" height="16" fill="hsl(347.604, 75%, 55%)" opacity="0.88"><title>task 13 on core 12: start=13274us dur=13123us</title></rect>
+<text x="1059.44" y="281.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t13</text>
+<rect x="761.68" y="250.00" width="595.29" height="16" fill="hsl(125.112, 75%, 55%)" opacity="0.88"><title>task 14 on core 11: start=13269us dur=13128us</title></rect>
+<text x="1059.32" y="263.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t14</text>
+<rect x="761.00" y="232.00" width="595.97" height="16" fill="hsl(262.620, 75%, 55%)" opacity="0.88"><title>task 15 on core 10: start=13254us dur=13143us</title></rect>
+<text x="1058.98" y="245.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t15</text>
+<rect x="760.68" y="214.00" width="570.71" height="16" fill="hsl(40.128, 75%, 55%)" opacity="0.88"><title>task 16 on core 9: start=13247us dur=12586us</title></rect>
+<text x="1046.04" y="227.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t16</text>
+<rect x="751.07" y="196.00" width="580.32" height="16" fill="hsl(177.636, 75%, 55%)" opacity="0.88"><title>task 17 on core 8: start=13035us dur=12798us</title></rect>
+<text x="1041.23" y="209.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t17</text>
+<rect x="750.93" y="178.00" width="580.41" height="16" fill="hsl(315.144, 75%, 55%)" opacity="0.88"><title>task 18 on core 7: start=13032us dur=12800us</title></rect>
+<text x="1041.14" y="191.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t18</text>
+<rect x="750.80" y="160.00" width="580.59" height="16" fill="hsl(92.652, 75%, 55%)" opacity="0.88"><title>task 19 on core 6: start=13029us dur=12804us</title></rect>
+<text x="1041.09" y="173.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t19</text>
+<rect x="750.66" y="142.00" width="580.91" height="16" fill="hsl(230.160, 75%, 55%)" opacity="0.88"><title>task 20 on core 5: start=13026us dur=12811us</title></rect>
+<text x="1041.12" y="155.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t20</text>
+<rect x="750.43" y="124.00" width="581.00" height="16" fill="hsl(7.668, 75%, 55%)" opacity="0.88"><title>task 21 on core 4: start=13021us dur=12813us</title></rect>
+<text x="1040.93" y="137.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t21</text>
+<rect x="750.25" y="106.00" width="581.14" height="16" fill="hsl(145.176, 75%, 55%)" opacity="0.88"><title>task 22 on core 3: start=13017us dur=12816us</title></rect>
+<text x="1040.82" y="119.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t22</text>
+<rect x="749.84" y="88.00" width="581.55" height="16" fill="hsl(282.684, 75%, 55%)" opacity="0.88"><title>task 23 on core 2: start=13008us dur=12825us</title></rect>
+<text x="1040.62" y="101.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t23</text>
+<rect x="749.39" y="70.00" width="592.11" height="16" fill="hsl(60.192, 75%, 55%)" opacity="0.88"><title>task 24 on core 1: start=12998us dur=13058us</title></rect>
+<text x="1045.45" y="83.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t24</text>
+<rect x="162.45" y="466.00" width="609.34" height="16" fill="hsl(197.700, 75%, 55%)" opacity="0.88"><title>task 25 on core 23: start=54us dur=13438us</title></rect>
+<text x="467.12" y="479.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t25</text>
+<rect x="162.40" y="448.00" width="609.39" height="16" fill="hsl(335.208, 75%, 55%)" opacity="0.88"><title>task 26 on core 22: start=53us dur=13439us</title></rect>
+<text x="467.10" y="461.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t26</text>
+<rect x="162.31" y="430.00" width="609.48" height="16" fill="hsl(112.716, 75%, 55%)" opacity="0.88"><title>task 27 on core 21: start=51us dur=13441us</title></rect>
+<text x="467.05" y="443.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t27</text>
+<rect x="162.22" y="412.00" width="592.97" height="16" fill="hsl(250.224, 75%, 55%)" opacity="0.88"><title>task 28 on core 20: start=49us dur=13077us</title></rect>
+<text x="458.71" y="425.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t28</text>
+<rect x="162.18" y="394.00" width="593.06" height="16" fill="hsl(27.732, 75%, 55%)" opacity="0.88"><title>task 29 on core 19: start=48us dur=13079us</title></rect>
+<text x="458.71" y="407.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t29</text>
+<rect x="162.00" y="376.00" width="593.25" height="16" fill="hsl(165.240, 75%, 55%)" opacity="0.88"><title>task 30 on core 18: start=44us dur=13083us</title></rect>
+<text x="458.62" y="389.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t30</text>
+<rect x="161.86" y="358.00" width="593.38" height="16" fill="hsl(302.748, 75%, 55%)" opacity="0.88"><title>task 31 on core 17: start=41us dur=13086us</title></rect>
+<text x="458.55" y="371.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t31</text>
+<rect x="161.63" y="340.00" width="595.06" height="16" fill="hsl(80.256, 75%, 55%)" opacity="0.88"><title>task 32 on core 16: start=36us dur=13123us</title></rect>
+<text x="459.16" y="353.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t32</text>
+<rect x="161.50" y="322.00" width="595.19" height="16" fill="hsl(217.764, 75%, 55%)" opacity="0.88"><title>task 33 on core 15: start=33us dur=13126us</title></rect>
+<text x="459.09" y="335.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t33</text>
+<rect x="161.45" y="304.00" width="595.24" height="16" fill="hsl(355.272, 75%, 55%)" opacity="0.88"><title>task 34 on core 14: start=32us dur=13127us</title></rect>
+<text x="459.07" y="317.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t34</text>
+<rect x="161.41" y="286.00" width="595.29" height="16" fill="hsl(132.780, 75%, 55%)" opacity="0.88"><title>task 35 on core 13: start=31us dur=13128us</title></rect>
+<text x="459.05" y="299.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t35</text>
+<rect x="161.31" y="268.00" width="590.80" height="16" fill="hsl(270.288, 75%, 55%)" opacity="0.88"><title>task 36 on core 12: start=29us dur=13029us</title></rect>
+<text x="456.71" y="281.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t36</text>
+<rect x="161.22" y="250.00" width="590.89" height="16" fill="hsl(47.796, 75%, 55%)" opacity="0.88"><title>task 37 on core 11: start=27us dur=13031us</title></rect>
+<text x="456.67" y="263.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t37</text>
+<rect x="161.09" y="232.00" width="590.93" height="16" fill="hsl(185.304, 75%, 55%)" opacity="0.88"><title>task 38 on core 10: start=24us dur=13032us</title></rect>
+<text x="456.55" y="245.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t38</text>
+<rect x="160.91" y="214.00" width="591.11" height="16" fill="hsl(322.812, 75%, 55%)" opacity="0.88"><title>task 39 on core 9: start=20us dur=13036us</title></rect>
+<text x="456.46" y="227.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t39</text>
+<rect x="160.77" y="196.00" width="586.26" height="16" fill="hsl(100.320, 75%, 55%)" opacity="0.88"><title>task 40 on core 8: start=17us dur=12929us</title></rect>
+<text x="453.90" y="209.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t40</text>
+<rect x="160.59" y="178.00" width="586.40" height="16" fill="hsl(237.828, 75%, 55%)" opacity="0.88"><title>task 41 on core 7: start=13us dur=12932us</title></rect>
+<text x="453.79" y="191.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t41</text>
+<rect x="160.54" y="160.00" width="586.49" height="16" fill="hsl(15.336, 75%, 55%)" opacity="0.88"><title>task 42 on core 6: start=12us dur=12934us</title></rect>
+<text x="453.79" y="173.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t42</text>
+<rect x="160.50" y="142.00" width="586.53" height="16" fill="hsl(152.844, 75%, 55%)" opacity="0.88"><title>task 43 on core 5: start=11us dur=12935us</title></rect>
+<text x="453.77" y="155.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t43</text>
+<rect x="160.41" y="124.00" width="586.40" height="16" fill="hsl(290.352, 75%, 55%)" opacity="0.88"><title>task 44 on core 4: start=9us dur=12932us</title></rect>
+<text x="453.61" y="137.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t44</text>
+<rect x="160.32" y="106.00" width="586.44" height="16" fill="hsl(67.860, 75%, 55%)" opacity="0.88"><title>task 45 on core 3: start=7us dur=12933us</title></rect>
+<text x="453.54" y="119.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t45</text>
+<rect x="160.36" y="88.00" width="586.40" height="16" fill="hsl(205.368, 75%, 55%)" opacity="0.88"><title>task 46 on core 2: start=8us dur=12932us</title></rect>
+<text x="453.56" y="101.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t46</text>
+<rect x="160.14" y="70.00" width="586.62" height="16" fill="hsl(342.876, 75%, 55%)" opacity="0.88"><title>task 47 on core 1: start=3us dur=12937us</title></rect>
+<text x="453.45" y="83.00" text-anchor="middle" font-family="monospace" font-size="9" fill="#111111" stroke="#ffffff" stroke-width="0.8" paint-order="stroke">t47</text>
+</svg>

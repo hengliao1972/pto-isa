@@ -17,13 +17,6 @@ from kernel import make_gemm16_kernel  # noqa: E402
 
 
 def _default_ptoas() -> Path:
-    for p in (
-        _REPO_ROOT / "bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build-macos/bin/ptoas",
-        _REPO_ROOT / "ptoas/mlir/build/bin/ptoas",
-    ):
-        if p.exists():
-            return p
     return _REPO_ROOT / "bin/ptoas"
 
 

@@ -9,11 +9,8 @@
 
 ## 前置条件
 
-- 先编译 `ptoas`：
-
-```bash
-ninja -C ptoas/mlir/build
-```
+- 确保你的平台有可用的 `ptoas`：
+  - `./bin/ptoas` 能正常运行（见 `bin/README.md`）。
 
 - NPU 环境：source Ascend 环境并设置 `ASCEND_HOME_PATH`：
 

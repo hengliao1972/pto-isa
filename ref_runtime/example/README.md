@@ -144,10 +144,7 @@ See the main [runtime README](../../README.md) for detailed documentation on the
 
 ### Import Error: Cannot import pto_runtime
 
-Make sure PYTHONPATH is set correctly:
-```bash
-export PYTHONPATH=/path/to/runtime/build/python:$PYTHONPATH
-```
+Run from a repo checkout (repo root must be on `PYTHONPATH`, and should contain `pto_runtime.py`).
 
 ### Kernel Compilation Failed
 

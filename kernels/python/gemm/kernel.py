@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pto_as import PTO
-from ptoas.python.ast_frontend import KernelSpec, compile_kernel_spec
+from pto import PTO, KernelSpec, compile_kernel_spec
 
 Target = Literal["cpu", "npu"]
 

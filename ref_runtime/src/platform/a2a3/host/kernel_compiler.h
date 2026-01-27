@@ -10,7 +10,7 @@
  * Requirements:
  * - ASCEND_HOME_PATH environment variable must be set
  * - PTO-ISA headers must be available (fetched at build time)
- * - ccec compiler must be available at ${ASCEND_HOME_PATH}/bin/ccec
+ * - A CCE compiler must be available (e.g. `ccec` from CANN toolchain)
  */
 
 #ifndef RUNTIME_KERNEL_COMPILER_H

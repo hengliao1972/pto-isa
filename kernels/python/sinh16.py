@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pto_as import PTO, scalar
+from pto import PTO, scalar
 
 
 def sinh16():

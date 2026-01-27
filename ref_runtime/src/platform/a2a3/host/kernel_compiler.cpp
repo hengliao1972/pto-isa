@@ -13,6 +13,7 @@
 #include <chrono>
 #include <array>
 #include <memory>
+#include <vector>
 
 int KernelCompiler::CompileKernel(const std::string& sourcePath,
                                   const std::string& ptoIsaRoot,
@@ -22,7 +23,7 @@ int KernelCompiler::CompileKernel(const std::string& sourcePath,
     // Step 1: Get compiler path
     std::string compilerPath;
     if (GetCompilerPath(compilerPath) != 0) {
-        errorMsg = "Failed to locate ccec compiler. Ensure ASCEND_HOME_PATH is set.";
+        errorMsg = "Failed to locate CCE compiler. Ensure ASCEND_HOME_PATH is set and the CANN toolchain is available.";
         return -1;
     }
 
@@ -87,23 +88,94 @@ int KernelCompiler::CompileKernel(const std::string& sourcePath,
     return 0;
 }
 
+static bool PathExists(const std::string& p) {
+    struct stat buffer;
+    return stat(p.c_str(), &buffer) == 0;
+}
+
+static std::string JoinPath(const std::string& a, const std::string& b) {
+    if (a.empty()) {
+        return b;
+    }
+    if (a.back() == '/') {
+        return a + b;
+    }
+    return a + "/" + b;
+}
+
+static bool FindExecutableInPath(const std::string& exe, std::string& outPath) {
+    const char* pathEnv = std::getenv("PATH");
+    if (pathEnv == nullptr) {
+        return false;
+    }
+    std::string pathStr(pathEnv);
+    size_t start = 0;
+    while (start <= pathStr.size()) {
+        size_t end = pathStr.find(':', start);
+        if (end == std::string::npos) {
+            end = pathStr.size();
+        }
+        std::string dir = pathStr.substr(start, end - start);
+        if (!dir.empty()) {
+            std::string cand = JoinPath(dir, exe);
+            if (PathExists(cand)) {
+                outPath = cand;
+                return true;
+            }
+        }
+        if (end == pathStr.size()) {
+            break;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
 int KernelCompiler::GetCompilerPath(std::string& compilerPath) {
+    const char* overrideCompiler = std::getenv("PTO_CCE_COMPILER");
+    if (overrideCompiler != nullptr && std::strlen(overrideCompiler) > 0) {
+        std::string p(overrideCompiler);
+        if (PathExists(p)) {
+            compilerPath = p;
+            return 0;
+        }
+        std::cerr << "Error: PTO_CCE_COMPILER is set but not found at " << p << std::endl;
+        return -1;
+    }
+
     const char* ascendHome = std::getenv("ASCEND_HOME_PATH");
     if (ascendHome == nullptr) {
         std::cerr << "Error: ASCEND_HOME_PATH environment variable not set" << std::endl;
         return -1;
     }
 
-    compilerPath = std::string(ascendHome) + "/bin/ccec";
+    // CANN toolchains may expose the compiler in different locations:
+    // - legacy: ${ASCEND_HOME_PATH}/bin/ccec
+    // - current: ${ASCEND_HOME_PATH}/compiler/ccec_compiler/bin/ccec
+    std::vector<std::string> candidates = {
+        std::string(ascendHome) + "/bin/ccec",
+        std::string(ascendHome) + "/compiler/ccec_compiler/bin/ccec",
+        std::string(ascendHome) + "/bin/bisheng",
+        std::string(ascendHome) + "/compiler/ccec_compiler/bin/bisheng",
+    };
 
-    // Check if compiler exists
-    struct stat buffer;
-    if (stat(compilerPath.c_str(), &buffer) != 0) {
-        std::cerr << "Error: ccec compiler not found at " << compilerPath << std::endl;
-        return -1;
+    for (const auto& p : candidates) {
+        if (PathExists(p)) {
+            compilerPath = p;
+            return 0;
+        }
     }
 
-    return 0;
+    // Fall back to PATH lookup (useful when the environment is sourced via `setenv.bash`).
+    if (FindExecutableInPath("ccec", compilerPath)) {
+        return 0;
+    }
+    if (FindExecutableInPath("bisheng", compilerPath)) {
+        return 0;
+    }
+
+    std::cerr << "Error: CCE compiler not found (tried ASCEND_HOME_PATH locations and PATH)" << std::endl;
+    return -1;
 }
 
 bool KernelCompiler::ValidatePtoIsaHeaders(const std::string& ptoIsaRoot) {
@@ -143,6 +215,7 @@ std::string KernelCompiler::BuildCompileCommand(const std::string& compilerPath,
                                                const std::string& ptoIsaRoot,
                                                int coreType) {
     std::ostringstream cmd;
+    const char* ascendHome = std::getenv("ASCEND_HOME_PATH");
 
     // Compiler executable
     cmd << compilerPath;
@@ -169,17 +242,45 @@ std::string KernelCompiler::BuildCompileCommand(const std::string& compilerPath,
     cmd << " -mllvm -cce-aicore-dcci-insert-for-scalar=false";
     cmd << " -DMEMORY_BASE";
 
+    // Enable device-side debug prints (e.g., TPRINT) when requested.
+    // `include/pto/npu/*/TPrint.hpp` gates printing on `_DEBUG`.
+    const char* cceDebug = std::getenv("PTO_CCE_DEBUG");
+    if (cceDebug != nullptr && std::strlen(cceDebug) > 0 && std::string(cceDebug) != "0") {
+        cmd << " -D_DEBUG";
+        // Enable CCE debug tunnel printing (`cce::printf`).
+        // Without these, the toolchain doesn't provide `cce::printf` symbols.
+        cmd << " -D__CCE_ENABLE_PRINT__ -D__CCE_ENABLE_PRINT_AICORE__";
+    }
+
     // Include paths
+    // PTO ISA headers (this repo).
     cmd << " -I" << ptoIsaRoot << "/include";
     cmd << " -I" << ptoIsaRoot << "/include/pto";
 
-    // Get parent directory of runtime/host for relative includes
-    // Assuming source is in runtime/aicore/kernels, we need runtime/ as include
-    // Extract runtime directory from source path
-    size_t runtimePos = sourcePath.find("/runtime/");
-    if (runtimePos != std::string::npos) {
-        std::string runtimeDir = sourcePath.substr(0, runtimePos + 9); // Include "/runtime/"
-        cmd << " -I" << runtimeDir;
+    // Ascend CANN/AscendC headers (needed for `kernel_operator.h`).
+    if (ascendHome != nullptr && std::strlen(ascendHome) > 0) {
+        std::string ah(ascendHome);
+        std::vector<std::string> includes = {
+            // AscendC (CANN 8.x) primary include roots.
+            ah + "/compiler/ascendc/include/basic_api",
+            ah + "/compiler/ascendc/include/basic_api/interface",
+            ah + "/compiler/ascendc/include/basic_api/impl",
+            // Some toolchains still use the older `asc` layout.
+            ah + "/compiler/asc/include/basic_api",
+            ah + "/compiler/asc/include/interface",
+            ah + "/compiler/asc",
+            // High-level AscendC API (tiling, etc.).
+            ah + "/include/ascendc/highlevel_api",
+            ah + "/include/ascendc",
+            // General CANN includes.
+            ah + "/include",
+            ah + "/runtime/include",
+        };
+        for (const auto& inc : includes) {
+            if (PathExists(inc)) {
+                cmd << " -I" << inc;
+            }
+        }
     }
 
     // Output file

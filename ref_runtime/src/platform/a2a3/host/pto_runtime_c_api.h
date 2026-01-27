@@ -32,6 +32,57 @@ typedef void* GraphHandle;
 /* =========================================================================== */
 
 /**
+ * Create an empty task graph.
+ *
+ * Caller must destroy it via Graph_Destroy().
+ *
+ * @return Graph handle on success, NULL on failure
+ */
+GraphHandle Graph_Create(void);
+
+/**
+ * Destroy a graph created by Graph_Create().
+ *
+ * @param graph Graph handle
+ * @return 0 on success, -1 on failure
+ */
+int Graph_Destroy(GraphHandle graph);
+
+/**
+ * Add a task to the graph.
+ *
+ * @param graph     Graph handle
+ * @param args      Argument array (uint64_t)
+ * @param num_args  Number of arguments
+ * @param func_id   Kernel function identifier
+ * @param core_type Requested core type (0=any, 1=AIC(cube), 2=AIV(vector))
+ * @return Task ID (>=0) on success, -1 on failure
+ */
+int Graph_AddTask(GraphHandle graph,
+                  const uint64_t* args,
+                  int num_args,
+                  int func_id,
+                  int core_type);
+
+/**
+ * Add a dependency edge from from_task -> to_task.
+ *
+ * @param graph      Graph handle
+ * @param from_task  Producer task ID
+ * @param to_task    Consumer task ID
+ * @return 0 on success, -1 on failure
+ */
+int Graph_AddSuccessor(GraphHandle graph, int from_task, int to_task);
+
+/**
+ * Get total number of tasks in the graph.
+ *
+ * @param graph Graph handle
+ * @return Task count (>=0) on success, -1 on failure
+ */
+int Graph_GetTaskCount(GraphHandle graph);
+
+/**
  * Initialize a graph for the basic example.
  *
  * Takes a graph handle and initializes it with the example graph structure
@@ -57,6 +108,41 @@ int ValidateGraph(GraphHandle graph);
 /* =========================================================================== */
 /* DeviceRunner API */
 /* =========================================================================== */
+
+/**
+ * Allocate device tensor memory.
+ *
+ * @param bytes Size of tensor in bytes
+ * @return Device pointer on success, NULL on failure
+ */
+void* DeviceRunner_AllocateTensor(size_t bytes);
+
+/**
+ * Free device tensor memory.
+ *
+ * @param dev_ptr Device pointer
+ */
+void DeviceRunner_FreeTensor(void* dev_ptr);
+
+/**
+ * Copy raw bytes from host to device.
+ *
+ * @param dev_ptr  Device pointer
+ * @param host_ptr Host pointer
+ * @param bytes    Number of bytes
+ * @return 0 on success, error code on failure
+ */
+int DeviceRunner_CopyToDevice(void* dev_ptr, const void* host_ptr, size_t bytes);
+
+/**
+ * Copy raw bytes from device to host.
+ *
+ * @param host_ptr Host pointer
+ * @param dev_ptr  Device pointer
+ * @param bytes    Number of bytes
+ * @return 0 on success, error code on failure
+ */
+int DeviceRunner_CopyFromDevice(void* host_ptr, const void* dev_ptr, size_t bytes);
 
 /**
  * Initialize the device runner.
@@ -108,13 +194,58 @@ void DeviceRunner_PrintHandshakeResults(GraphHandle graph);
 int DeviceRunner_Finalize(void);
 
 /**
+ * Enable/disable per-task profiling (graph copy-back).
+ *
+ * @param enabled 0=disable, non-zero=enable
+ * @return 0 on success, -1 on failure
+ */
+int DeviceRunner_SetProfileEnabled(int enabled);
+
+/**
+ * Return 1 if profiling is enabled, else 0.
+ */
+int DeviceRunner_ProfileEnabled(void);
+
+/**
+ * Return 1 if profiling data from the last run is available, else 0.
+ */
+int DeviceRunner_HasLastProfile(void);
+
+#ifndef PTO_PROFILE_PMU_CNT
+#define PTO_PROFILE_PMU_CNT 8
+#endif
+
+typedef struct {
+    int task_id;
+    int func_id;
+    int core_type;  // requested core type (0=any, 1=AIC, 2=AIV)
+    uint32_t exec_core_id;
+    uint32_t exec_core_type;  // executing core type (1=AIC, 2=AIV)
+    uint32_t exec_phys_core_id;
+    uint64_t start_time;
+    uint64_t end_time;
+    uint32_t pmu_cnt[PTO_PROFILE_PMU_CNT];
+} PtoTaskProfileRecord;
+
+/**
+ * Get profiling records from the last profiled run.
+ *
+ * If out_records is NULL or max_records <= 0, returns the required count.
+ *
+ * @param out_records Output buffer for records
+ * @param max_records Maximum records that fit in out_records
+ * @return Number of records written/required (>=0) on success, -1 on failure
+ */
+int DeviceRunner_GetLastProfile(PtoTaskProfileRecord* out_records, int max_records);
+
+/**
  * Compile and load a kernel at runtime.
  *
  * Uses the DeviceRunner singleton internally.
  *
  * @param func_id       Function identifier for this kernel
  * @param kernel_path   Path to kernel source file (.cpp)
- * @param core_type     Core type: 0=AIC, 1=AIV (default 1)
+ * @param core_type     Core type: 0=AIC, 1=AIV (default 0)
  * @return 0 on success, error code on failure
  */
 int DeviceRunner_CompileAndLoadKernel(int func_id,
@@ -126,4 +257,3 @@ int DeviceRunner_CompileAndLoadKernel(int func_id,
 #endif
 
 #endif  /* PTO_RUNTIME_C_API_H */
-

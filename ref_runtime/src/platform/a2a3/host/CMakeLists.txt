@@ -56,6 +56,8 @@ target_include_directories(host_runtime
         ${CMAKE_CUSTOM_INCLUDE_DIRS}
     PRIVATE
         ${ASCEND_HOME_PATH}/include
+        ${ASCEND_HOME_PATH}/include/experiment/runtime
+        ${ASCEND_HOME_PATH}/include/experiment/msprof
         ${ASCEND_HOME_PATH}/pkg_inc
         ${ASCEND_HOME_PATH}/pkg_inc/runtime
         ${ASCEND_HOME_PATH}/pkg_inc/profiling

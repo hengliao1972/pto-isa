@@ -6,6 +6,7 @@
  */
 
 #include "graph.h"
+#include <limits>
 
 // =============================================================================
 // Constructor
@@ -24,6 +25,11 @@ Graph::Graph() {
 // Task Management
 // =============================================================================
 
+int Graph::add_task(uint64_t* args, int num_args, int func_id) {
+    // Default to cube (AIC) cores. Most kernels in this repo are compiled for
+    // `dav-c220-cube` and must not run on AIV workers.
+    return add_task(args, num_args, func_id, /*core_type=*/1);
+}
 int Graph::add_task(uint64_t* args, int num_args, int func_id, int core_type) {
     // Check bounds
     if (next_task_id >= GRAPH_MAX_TASKS) {
@@ -37,6 +43,11 @@ int Graph::add_task(uint64_t* args, int num_args, int func_id, int core_type) {
         return -1;
     }
 
+    if (core_type < 0 || core_type > 2) {
+        fprintf(stderr, "[Graph] ERROR: Invalid core_type=%d (expected 0=any, 1=AIC, 2=AIV)\n", core_type);
+        return -1;
+    }
+
     // Allocate task
     int task_id = next_task_id++;
     Task* task = &tasks[task_id];
@@ -44,15 +55,20 @@ int Graph::add_task(uint64_t* args, int num_args, int func_id, int core_type) {
     // Initialize task fields
     task->task_id = task_id;
     task->func_id = func_id;
+    task->core_type = core_type;
     task->num_args = num_args;
     if (args && num_args > 0) {
         memcpy(task->args, args, num_args * sizeof(uint64_t));
     }
     task->functionBinAddr = 0;  // Will be set by host before copying to device
-    task->core_type = core_type;  // Set core type (0=AIC, 1=AIV)
     task->fanin = 0;
     task->fanout_count = 0;
     memset(task->fanout, 0, sizeof(task->fanout));
+    // Reset profiling (filled by AICore at runtime).
+    memset(&task->profile, 0, sizeof(task->profile));
+    task->profile.exec_core_id = std::numeric_limits<uint32_t>::max();
+    task->profile.exec_core_type = 0;
+    task->profile.exec_phys_core_id = std::numeric_limits<uint32_t>::max();
 
     return task_id;
 }
@@ -88,6 +104,13 @@ void Graph::add_successor(int from_task, int to_task) {
 // =============================================================================
 
 Task* Graph::get_task(int task_id) {
+    if (task_id < 0 || task_id >= next_task_id) {
+        return nullptr;
+    }
+    return &tasks[task_id];
+}
+
+const Task* Graph::get_task(int task_id) const {
     if (task_id < 0 || task_id >= next_task_id) {
         return nullptr;
     }
