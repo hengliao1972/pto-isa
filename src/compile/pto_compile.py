@@ -811,8 +811,13 @@ class MultiBackendCodeGenerator:
         _src_dir = os.path.dirname(_current_dir)
         runtime_dir = os.path.join(_src_dir, "runtime")
         
-        compile_flags = ["-O2", "-std=c11", "-DPTO_BINARY_EXPANSION", 
-                         "-DPTO_TASK_DUMP"]
+        compile_flags = [
+            "-O2",
+            "-std=c11",
+            "-D_POSIX_C_SOURCE=199309L",
+            "-DPTO_BINARY_EXPANSION",
+            "-DPTO_TASK_DUMP",
+        ]
         
         compile_cmd = [
             compiler,

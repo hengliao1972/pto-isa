@@ -108,23 +108,44 @@ def generate_code():
     """Generate code for the target platform."""
     print_header("Code Generation")
     
-    # Import the example module
-    example_module_name = None
-    for f in os.listdir(SCRIPT_DIR):
-        if f.startswith('pto_') and f.endswith('.py') and f != 'run.py':
-            example_module_name = f[:-3]
-            break
-    
-    if not example_module_name:
+    # Import the example module.
+    # Prefer modules that expose create_*_module() / create_module() (direct codegen),
+    # and fall back to a module that has main().
+    sys.path.insert(0, SCRIPT_DIR)
+    candidates = sorted(
+        f[:-3]
+        for f in os.listdir(SCRIPT_DIR)
+        if f.startswith("pto_") and f.endswith(".py") and f != "run.py"
+    )
+    if not candidates:
         print("Error: No pto_*.py example file found!")
         return False
     
-    print(f"  Loading example: {example_module_name}")
-    
-    # Import and run the example's main function
-    sys.path.insert(0, SCRIPT_DIR)
     try:
-        example_module = __import__(example_module_name)
+        example_module_name = None
+        example_module = None
+        for name in candidates:
+            mod = __import__(name)
+            has_codegen_entry = (
+                hasattr(mod, "create_module")
+                or any(attr.startswith("create_") and attr.endswith("_module") for attr in dir(mod))
+            )
+            if has_codegen_entry:
+                example_module_name = name
+                example_module = mod
+                break
+        if example_module is None:
+            for name in candidates:
+                mod = __import__(name)
+                if hasattr(mod, "main"):
+                    example_module_name = name
+                    example_module = mod
+                    break
+        if example_module is None:
+            example_module_name = candidates[0]
+            example_module = __import__(example_module_name)
+        
+        print(f"  Loading example: {example_module_name}")
         
         # Look for create_*_module functions first (for direct code generation)
         create_module_func = None
@@ -305,8 +326,11 @@ def compile_code():
     # Build compile command - output executable to platform_dir (not code_dir)
     exe_basename = os.path.basename(orch_file).replace('.c', '')
     exe_path = os.path.join(platform_dir, exe_basename)
+    # Ensure we don't accidentally run a stale binary if compilation fails.
+    if os.path.exists(exe_path):
+        os.remove(exe_path)
     
-    compile_flags = ["-O2", "-std=c11"]
+    compile_flags = ["-O2", "-std=c11", "-D_POSIX_C_SOURCE=199309L"]
     if CONFIG['enable_binary_expansion']:
         compile_flags.append("-DPTO_BINARY_EXPANSION")
     if CONFIG['enable_task_dump']:
