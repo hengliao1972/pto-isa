@@ -52,7 +52,7 @@ python3 -m pip install -r requirements.txt
 
 `bin/ptoas` is a small wrapper that dispatches to an OS/arch-specific binary under `bin/<platform>/ptoas`.
 
-- Linux aarch64: `bin/linux-aarch64/ptoas` (included)
+- Linux aarch64: `bin/linux-aarch64/ptoas.tar.gz` (auto-extracted on first use)
 - Linux x86_64: build from source (see `bin/linux-x86_64/README.md`)
 - macOS aarch64: build from source (see `bin/macos-aarch64/README.md`)
 
@@ -62,10 +62,11 @@ Quick check:
 ./bin/ptoas --help
 ```
 
-### 2) CPU-only end-to-end (Ubuntu/macOS)
+### 2) End-to-end (Ascend NPU)
 
 ```bash
-python3 kernels/python/gemm/run.py --target cpu --ptoas ./bin/ptoas --outdir /tmp/pto_kernel_python_gemm
+export ASCEND_HOME_PATH=$HOME/Ascend/ascend-toolkit/latest
+python3 examples/bgemm/run_ascend_a2a3.py --ptoas ./bin/ptoas --ascend-home $ASCEND_HOME_PATH --device 0
 ```
 
 ### 3) Ascend NPU prerequisites (Ubuntu aarch64)
@@ -78,23 +79,15 @@ export ASCEND_HOME_PATH=$HOME/Ascend/ascend-toolkit/latest
 
 No manual build step is required: `pto_runtime.py` builds/loads the host runtime and AICPU/AICore helper binaries on first use via `ref_runtime/python/binary_compiler.py` (requires `cmake`/`make` and the CANN toolchain).
 
-### 5) Run BGEMM and generate a task trace (Ascend A2/A3)
-
-This runs a batched GEMM on cube cores using the **runtime task graph** and exports:
-
-- `trace.svg`: swimlane timeline (per-task start/end)
-- `trace.json`: Chrome/Perfetto trace
-- `task_profile.json`: raw per-task records
+### 5) Run BGEMM (Ascend A2/A3)
 
 ```bash
-python3 kernels/python/bgemm_performance/run_runtime.py \
+python3 examples/bgemm/run_ascend_a2a3.py \
   --ptoas ./bin/ptoas --ascend-home $ASCEND_HOME_PATH \
   --device 0 --aic-blocks 24 \
   --batch 2 --m 6144 --n 6144 --k 6144 --grid-m 4 --grid-n 6 \
   --iters 10 --warmup 2 --no-check \
-  --outdir /tmp/pto_bgemm_runtime_profile \
-  --trace-json /tmp/pto_bgemm_runtime_profile/trace.json \
-  --trace-svg  /tmp/pto_bgemm_runtime_profile/trace.svg
+  --outdir /tmp/pto_bgemm_runtime_profile
 ```
 
 Outputs are written under `/tmp/pto_bgemm_runtime_profile/`:
@@ -102,17 +95,7 @@ Outputs are written under `/tmp/pto_bgemm_runtime_profile/`:
 - `kernel_0.pto` (generated PTO-AS)
 - `kernel_0.cpp` (`ptoas` output, Ascend CCE C++)
 - `ptoas.log` (`ptoas` logs)
-- `trace.svg` / `trace.json` / `task_profile.json` (profiling output)
-
-You should see staged logs (`=== Compile & load ===`, `=== Benchmark ===`, `=== Profile & trace export ===`) and:
-
-```text
-profile: wrote /tmp/pto_bgemm_runtime_profile/trace.svg
-```
-
-Example trace:
-
-![BGEMM task trace](assets/bgemm_trace.svg)
+- (and runtime-generated build artifacts under `/tmp`)
 
 ## How the BGEMM work is split
 
@@ -122,8 +105,7 @@ Example trace:
 
 ## Running more kernels
 
-- Regression runner (CPU / simulator / NPU): `kernels/python/run_regression.py`
-- Kernel overview: `kernels/README.md`
+- This repo focuses on the runtime workflow; see `examples/` for runnable kernels.
 - Standalone PTO-AS examples: `ptoas/examples/`
 - Runtime examples: `runtime/example/basic_python/` and `examples/bgemm/`
 
@@ -132,7 +114,7 @@ Example trace:
 - `pto/` and `pto_as/`: Python frontends/utilities (generate PTO-AS, compile via `ptoas`, call runtime)
 - `ptoas/`: PTO-AS compiler (`ptoas`) + Python tooling
 - `runtime/`: task-graph runtime + `pto_runtime` Python bindings (Ascend)
-- `kernels/`: kernel examples (Python frontends, performance runners)
+- `examples/`: runnable kernels and end-to-end flows
 - `include/pto/`: PTO intrinsic headers used by generated CCE C++
 - `bin/`: `ptoas` wrapper + prebuilt binaries
 

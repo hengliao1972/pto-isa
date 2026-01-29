@@ -29,10 +29,8 @@ examples/*/output/
 core*_*.dump
 profile_*_log*.toml
 
-# Keep vendored PTO-AS sources ignored by default (they are large).
-ptoas
-pto_as
+# Removed `kernels/` in favor of `examples/` flow.
+kernels/
 
-# But do commit the launcher + prebuilt binaries under `bin/`.
-!bin/ptoas
-!bin/*/ptoas
+# Extracted `ptoas` binaries (generated from the per-platform tarballs).
+bin/*/ptoas

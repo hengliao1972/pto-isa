@@ -937,6 +937,10 @@ class AscendA2A3SimCodeGenerator:
                 # Scalar type - dereference
                 lines.append(f"    {c_type} {name} = *({c_type}*)params[{i}];")
         lines.append("")
+
+        lines.append("    // Root scope for buffer lifetime management")
+        lines.append("    pto_scope_begin(rt);")
+        lines.append("")
         
         # Task counter
         lines.append("    int32_t _task_id = 0;")
@@ -1056,7 +1060,12 @@ class AscendA2A3SimCodeGenerator:
                 dst = instr.dst
                 val = instr.operands[0] if instr.operands else "0"
                 lines.append(f"{indent}// SLI: {dst} = {val}")
+            elif opcode == "RETURN":
+                lines.append(f"{indent}goto __pto_orch_epilogue;")
         
+        lines.append("    __pto_orch_epilogue:;")
+        lines.append("    pto_scope_end(rt);")
+        lines.append("    return;")
         lines.append("}")
         
         return "\n".join(lines)

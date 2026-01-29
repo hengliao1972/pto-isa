@@ -33,3 +33,20 @@ python3 examples/bgemm/pto_bgemm_adaptive.py \
   --device 0 --aic-blocks 24 \
   --allow-unaligned --batch 2 --m 4097 --n 6150 --k 4101 --grid-m 4 --grid-n 6
 ```
+
+## Direct runner
+
+The underlying runner is:
+
+```bash
+python3 examples/bgemm/run_ascend_a2a3.py --help
+```
+
+## Timeouts
+
+If a run hangs (driver/runtime issues), wrap the invocation with `timeout`:
+
+```bash
+timeout 600s python3 examples/bgemm/run_ascend_a2a3.py ...
+```
+```

@@ -14,8 +14,28 @@ case "${os}:${arch}" in
 esac
 
 exe="$(cd "$(dirname "$0")" && pwd)/${subdir}/ptoas"
+archive="$(dirname "$exe")/ptoas.tar.gz"
+if [[ ! -x "$exe" && -f "$archive" ]]; then
+  echo "[ptoas] extracting: $archive -> $(dirname "$exe")" >&2
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/ptoas_extract.XXXXXX")"
+  trap 'rm -rf "$tmpdir" 2>/dev/null || true' EXIT
+  tar -xzf "$archive" -C "$tmpdir"
+  if [[ ! -f "$tmpdir/ptoas" ]]; then
+    echo "error: archive did not contain 'ptoas': $archive" >&2
+    exit 2
+  fi
+  chmod +x "$tmpdir/ptoas" || true
+  mkdir -p "$(dirname "$exe")"
+  mv -f "$tmpdir/ptoas" "$exe"
+  chmod +x "$exe" || true
+  rm -rf "$tmpdir" 2>/dev/null || true
+  trap - EXIT
+fi
 if [[ ! -x "$exe" ]]; then
   echo "error: ptoas binary not found or not executable: $exe" >&2
+  if [[ -f "$archive" ]]; then
+    echo "hint: run again to auto-extract: $archive" >&2
+  fi
   readme="$(dirname "$exe")/README.md"
   if [[ -f "$readme" ]]; then
     echo "hint: see $readme" >&2

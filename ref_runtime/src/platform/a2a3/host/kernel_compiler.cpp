@@ -240,7 +240,8 @@ std::string KernelCompiler::BuildCompileCommand(const std::string& compilerPath,
     cmd << " -mllvm -cce-aicore-record-overflow=false";
     cmd << " -mllvm -cce-aicore-addr-transform";
     cmd << " -mllvm -cce-aicore-dcci-insert-for-scalar=false";
-    cmd << " -DMEMORY_BASE";
+    // Memory model is selected by the generated kernel source (`#define MEMORY_BASE` or `#define REGISTER_BASE`).
+    // Do not force `-DMEMORY_BASE` here, otherwise REGISTER_BASE kernels will compile with both flags defined.
 
     // Enable device-side debug prints (e.g., TPRINT) when requested.
     // `include/pto/npu/*/TPrint.hpp` gates printing on `_DEBUG`.

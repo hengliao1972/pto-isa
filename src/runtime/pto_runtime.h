@@ -41,7 +41,7 @@
  * 
  * ARM64 (Distributed):
  *   - Dependencies are tracked via fanin/fanout lists in task entries
- *   - Task completion directly decrements fanin of dependent tasks
+ *   - Task completion increments successors' fanin_refcount until it reaches fanin_count
  *   - Ready tasks are pushed to a single unified queue
  *   - Simple and efficient for homogeneous execution
  * 

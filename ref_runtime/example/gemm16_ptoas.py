@@ -73,12 +73,7 @@ def main() -> int:
 
     cfg = PtoasConfig(
         ptoas=repo_root / "bin" / "ptoas",
-        arch="dav-c220-cube",
         memory_model="MEMORY_BASE",
-        kernel_abi="mpmd",
-        insert_events=True,
-        assign_tile_addrs=True,
-        ascend_home=ascend_home,
         repo_root=repo_root,
         timeout_s=timeout_s,
         log_path=out_dir / "ptoas.log",

@@ -338,7 +338,10 @@ def gen_arm64_barrier_op(instr: MockInstruction, rows: int, cols: int, dtype: st
                 lines.append(f"{callee}();")
     
     elif instr.opcode == "RETURN":
-        lines.append("return;")
+        if orch_ctx is not None:
+            lines.append("goto __pto_orch_epilogue;")
+        else:
+            lines.append("return;")
         
     else:
         lines.append(f"// {instr.opcode}: Not implemented")
@@ -633,6 +636,11 @@ class ARM64CodeGenerator:
             c_type = ARM64_TYPE_MAP.get(info.dtype, "float")
             lines.append(f"    {c_type} {name}[{info.rows}][{info.cols}];")
         lines.append("")
+
+        if not is_in_core:
+            lines.append("    // Root scope for buffer lifetime management")
+            lines.append("    pto_scope_begin(rt);")
+            lines.append("")
         
         if self.enable_fusion:
             optimizer = LoopFusionOptimizer(tile_info)
@@ -681,6 +689,10 @@ class ARM64CodeGenerator:
                     
                     lines.append("")
         
+        if not is_in_core:
+            lines.append("    __pto_orch_epilogue:;")
+            lines.append("    pto_scope_end(rt);")
+            lines.append("    return;")
         lines.append("}")
         
         code = "\n".join(lines)

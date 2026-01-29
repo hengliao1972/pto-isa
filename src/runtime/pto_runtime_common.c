@@ -33,16 +33,45 @@ void pto_runtime_init(PTORuntime* rt) {
     rt->active_task_count = 0;
     
     // Initialize sliding window tracking
-    rt->window_oldest_pending = 0;
+    rt->last_task_alive = 0;
     rt->window_aborted = false;
     rt->runtime_mode = PTO_MODE_BENCHMARK_ONLY;  // Default: no window check
     
-    // Initialize tensor map
-    memset(rt->tensor_map, 0, sizeof(rt->tensor_map));
-    
-    // Allocate tensor map memory pool
-    rt->tensormap_pool = (TensorMapEntry*)malloc(PTO_TENSORMAP_POOL_SIZE * sizeof(TensorMapEntry));
-    rt->tensormap_pool_next = 0;
+    // Initialize dependency list pool
+    memset(rt->dep_list_pool, 0, sizeof(rt->dep_list_pool));
+    rt->dep_list_top = 1;   // 0 reserved as NULL
+    rt->dep_list_tail = 1;
+
+    // Initialize TensorMap
+    for (int i = 0; i < PTO_TENSORMAP_SIZE; i++) {
+        rt->tensor_map.buckets[i] = -1;
+    }
+    for (int i = 0; i < PTO_TASK_WINDOW_SIZE; i++) {
+        rt->tensor_map.task_entry_head[i] = -1;
+        rt->fanin_refcount[i] = 0;
+        rt->fanout_refcount[i] = 0;
+        rt->task_state[i] = PTO_TASK_PENDING;
+    }
+    for (int i = 0; i < PTO_TENSORMAP_POOL_SIZE; i++) {
+        rt->tensor_map.entry_pool[i].in_bucket = false;
+        rt->tensor_map.entry_pool[i].next_in_bucket = -1;
+        rt->tensor_map.entry_pool[i].next_in_task = -1;
+        rt->tensor_map.entry_pool[i].producer_task_id = -1;
+        memset(&rt->tensor_map.entry_pool[i].region, 0, sizeof(TensorRegion));
+    }
+    rt->tensor_map.pool_head = 0;
+    rt->tensor_map.last_task_alive = 0;
+
+    // Initialize packed output heap ring (host/sim)
+    rt->heap_size = PTO_HEAP_SIZE_BYTES;
+    rt->heap_top = 0;
+    rt->heap_tail = 0;
+    rt->heap_base = (uint8_t*)aligned_alloc(64, (size_t)rt->heap_size);
+    if (rt->heap_base) {
+        memset(rt->heap_base, 0, (size_t)rt->heap_size);
+    } else {
+        rt->heap_base = (uint8_t*)calloc(1, (size_t)rt->heap_size);
+    }
     
     // Initialize legacy ready queue
     memset(rt->ready_queue, 0, sizeof(rt->ready_queue));
@@ -85,6 +114,9 @@ void pto_runtime_init(PTORuntime* rt) {
     rt->dual_queue_mode = false;
     memset(rt->workers, 0, sizeof(rt->workers));
     memset(rt->func_registry, 0, sizeof(rt->func_registry));
+
+    // Initialize scope stack
+    rt->scope_stack_top = -1;
     
     DEBUG_PRINT("[PTO Runtime] Initialized (window_size=%d, tensormap_size=%d)\n",
            PTO_TASK_WINDOW_SIZE, PTO_TENSORMAP_SIZE);
@@ -96,13 +128,11 @@ void pto_runtime_shutdown(PTORuntime* rt) {
     // Cleanup core simulator (if used)
     pto_cleanup_core_sim();
     
-    // Free tensor map memory pool
-    if (rt->tensormap_pool) {
-        free(rt->tensormap_pool);
-        rt->tensormap_pool = NULL;
+    // Free packed output heap
+    if (rt->heap_base) {
+        free(rt->heap_base);
+        rt->heap_base = NULL;
     }
-    rt->tensormap_pool_next = 0;
-    memset(rt->tensor_map, 0, sizeof(rt->tensor_map));
     
     // Destroy thread synchronization primitives
     pthread_mutex_destroy(&rt->queue_mutex);
@@ -137,12 +167,37 @@ void pto_runtime_reset(PTORuntime* rt) {
     
     rt->next_task_id = 0;
     rt->active_task_count = 0;
-    rt->window_oldest_pending = 0;
+    rt->last_task_alive = 0;
     rt->window_aborted = false;
     
-    // Clear tensor map (just reset hash table and pool index, entries are in pool)
-    memset(rt->tensor_map, 0, sizeof(rt->tensor_map));
-    rt->tensormap_pool_next = 0;
+    // Clear dependency list pool
+    memset(rt->dep_list_pool, 0, sizeof(rt->dep_list_pool));
+    rt->dep_list_top = 1;
+    rt->dep_list_tail = 1;
+
+    // Clear tensor map
+    for (int i = 0; i < PTO_TENSORMAP_SIZE; i++) {
+        rt->tensor_map.buckets[i] = -1;
+    }
+    for (int i = 0; i < PTO_TENSORMAP_POOL_SIZE; i++) {
+        rt->tensor_map.entry_pool[i].in_bucket = false;
+        rt->tensor_map.entry_pool[i].next_in_bucket = -1;
+        rt->tensor_map.entry_pool[i].next_in_task = -1;
+        rt->tensor_map.entry_pool[i].producer_task_id = -1;
+        memset(&rt->tensor_map.entry_pool[i].region, 0, sizeof(TensorRegion));
+    }
+    rt->tensor_map.pool_head = 0;
+    rt->tensor_map.last_task_alive = 0;
+    for (int i = 0; i < PTO_TASK_WINDOW_SIZE; i++) {
+        rt->tensor_map.task_entry_head[i] = -1;
+        rt->fanin_refcount[i] = 0;
+        rt->fanout_refcount[i] = 0;
+        rt->task_state[i] = PTO_TASK_PENDING;
+    }
+
+    // Reset heap ring pointers
+    rt->heap_top = 0;
+    rt->heap_tail = 0;
     
     // Reset ready queues
     rt->ready_head = 0;
@@ -158,6 +213,9 @@ void pto_runtime_reset(PTORuntime* rt) {
     // Reset statistics
     rt->total_tasks_scheduled = 0;
     rt->total_tasks_completed = 0;
+
+    // Reset scope stack
+    rt->scope_stack_top = -1;
     
     DEBUG_PRINT("[PTO Runtime] Reset complete\n");
 }
@@ -173,28 +231,25 @@ void pto_runtime_stats(PTORuntime* rt) {
 
 // =============================================================================
 // TensorMap Implementation (Platform Independent)
-// 
-// Optimization: Entries with producer_id < window_oldest_pending are considered
-// "stale" and can be reused or skipped. This keeps the tensor map size bounded
-// by the sliding window size rather than growing unboundedly.
+//
+// Design:
+// - Hash buckets are singly-linked lists of entry offsets into a ring-buffer pool.
+// - Entries become stale when producer_task_id < last_task_alive (lazy invalidation).
+// - On lookup, encountering the first stale entry allows chain truncation since
+//   inserts always go to the head (newest-to-oldest ordering by insertion time).
+// - On pool reuse, we must unlink the old entry from its bucket chain before
+//   overwriting to avoid corrupting chains.
 // =============================================================================
 
 uint32_t pto_tensormap_hash(TensorRegion* region) {
-    // Fast hash with good distribution - no loops, minimal operations
     uint64_t ptr_val = (uint64_t)region->raw_tensor;
-    
-    // Combine all fields with shifts and XORs (very fast)
     uint64_t h = ptr_val;
-    h ^= (uint64_t)region->row_offset * 0x9E3779B97F4A7C15ULL;  // Golden ratio constant
-    h ^= (uint64_t)region->col_offset * 0xC6A4A7935BD1E995ULL;  // Another prime
+    h ^= (uint64_t)region->row_offset * 0x9E3779B97F4A7C15ULL;
+    h ^= (uint64_t)region->col_offset * 0xC6A4A7935BD1E995ULL;
     h ^= ((uint64_t)region->rows << 32) | (uint64_t)region->cols;
-    
-    // Final mix (from MurmurHash finalizer)
     h ^= h >> 33;
     h *= 0xFF51AFD7ED558CCDULL;
     h ^= h >> 33;
-    
-    // Use bitwise AND for power-of-2 table size
     return (uint32_t)h & (PTO_TENSORMAP_SIZE - 1);
 }
 
@@ -206,102 +261,312 @@ bool pto_region_match(TensorRegion* a, TensorRegion* b) {
            a->cols == b->cols;
 }
 
-// Check if an entry is stale (producer task has already completed and left the window)
-static inline bool pto_tensormap_entry_is_stale(PTORuntime* rt, TensorMapEntry* entry) {
-    return entry->producer_id < rt->window_oldest_pending;
+static inline bool pto_tensormap_entry_valid(PTORuntime* rt, TensorMapEntry* entry) {
+    return entry->producer_task_id >= rt->last_task_alive;
+}
+
+static void pto_tensormap_remove_from_bucket(PTORuntime* rt, int32_t entry_offset) {
+    TensorMap* tm = &rt->tensor_map;
+    TensorMapEntry* entry = &tm->entry_pool[entry_offset];
+    uint32_t bucket = pto_tensormap_hash(&entry->region);
+
+    int32_t* prev_ptr = &tm->buckets[bucket];
+    int32_t cur = *prev_ptr;
+    while (cur >= 0) {
+        if (cur == entry_offset) {
+            *prev_ptr = tm->entry_pool[cur].next_in_bucket;
+            entry->in_bucket = false;
+            entry->next_in_bucket = -1;
+            return;
+        }
+        prev_ptr = &tm->entry_pool[cur].next_in_bucket;
+        cur = *prev_ptr;
+    }
+    // Not found (bucket chain may have been cleared); still mark as unlinked.
+    entry->in_bucket = false;
+    entry->next_in_bucket = -1;
 }
 
 int32_t pto_tensormap_lookup(PTORuntime* rt, TensorRegion* region) {
-    uint32_t hash = pto_tensormap_hash(region);
-    TensorMapEntry* entry = rt->tensor_map[hash];
-    
-    while (entry) {
-        if (pto_region_match(&entry->region, region)) {
-            // Check if producer is stale (outside window)
-            if (pto_tensormap_entry_is_stale(rt, entry)) {
-                return -1;  // Producer no longer valid
+    TensorMap* tm = &rt->tensor_map;
+    tm->last_task_alive = rt->last_task_alive;
+    uint32_t bucket = pto_tensormap_hash(region);
+
+    int32_t* prev_ptr = &tm->buckets[bucket];
+    int32_t offset = *prev_ptr;
+
+    while (offset >= 0) {
+        TensorMapEntry* entry = &tm->entry_pool[offset];
+
+        if (!pto_tensormap_entry_valid(rt, entry)) {
+            // Truncate stale tail: all following entries are older.
+            *prev_ptr = -1;
+            while (offset >= 0) {
+                TensorMapEntry* stale = &tm->entry_pool[offset];
+                int32_t next = stale->next_in_bucket;
+                stale->in_bucket = false;
+                stale->next_in_bucket = -1;
+                offset = next;
             }
-            return entry->producer_id;
+            return -1;
         }
-        entry = entry->next;
+
+        if (pto_region_match(&entry->region, region)) {
+            return entry->producer_task_id;
+        }
+
+        prev_ptr = &entry->next_in_bucket;
+        offset = *prev_ptr;
     }
-    
-    return -1; // Not found
+
+    return -1;
 }
 
 void pto_tensormap_insert(PTORuntime* rt, TensorRegion* region, int32_t task_id) {
-    uint32_t hash = pto_tensormap_hash(region);
-    TensorMapEntry* entry = rt->tensor_map[hash];
-    
-    while (entry) {
-        // Exact match - update in place
-        if (pto_region_match(&entry->region, region)) {
-            entry->producer_id = task_id;
-            return;
-        }
-        
-        // Stale entry - overwrite in place (no GC needed)
-        if (pto_tensormap_entry_is_stale(rt, entry)) {
-            entry->region = *region;
-            entry->producer_id = task_id;
-            return;
-        }
-        
-        entry = entry->next;
+    TensorMap* tm = &rt->tensor_map;
+    tm->last_task_alive = rt->last_task_alive;
+
+    int32_t entry_offset = tm->pool_head;
+    TensorMapEntry* entry = &tm->entry_pool[entry_offset];
+    tm->pool_head = (tm->pool_head + 1) % PTO_TENSORMAP_POOL_SIZE;
+
+    if (entry->in_bucket) {
+        pto_tensormap_remove_from_bucket(rt, entry_offset);
     }
-    
-    // No reusable entry found - allocate from pool
-    if (rt->tensormap_pool && rt->tensormap_pool_next < PTO_TENSORMAP_POOL_SIZE) {
-        TensorMapEntry* new_entry = &rt->tensormap_pool[rt->tensormap_pool_next++];
-        new_entry->region = *region;
-        new_entry->producer_id = task_id;
-        new_entry->next = rt->tensor_map[hash];
-        rt->tensor_map[hash] = new_entry;
-    } else {
-        // Fallback to malloc if pool exhausted
-        TensorMapEntry* new_entry = (TensorMapEntry*)malloc(sizeof(TensorMapEntry));
-        if (!new_entry) {
-            fprintf(stderr, "[PTO Runtime] ERROR: Failed to allocate TensorMapEntry\n");
-            return;
-        }
-        new_entry->region = *region;
-        new_entry->producer_id = task_id;
-        new_entry->next = rt->tensor_map[hash];
-        rt->tensor_map[hash] = new_entry;
-    }
+
+    entry->region = *region;
+    entry->producer_task_id = task_id;
+
+    uint32_t bucket = pto_tensormap_hash(region);
+    entry->next_in_bucket = tm->buckets[bucket];
+    tm->buckets[bucket] = entry_offset;
+    entry->in_bucket = true;
+
+    int32_t task_slot = PTO_TASK_SLOT(task_id);
+    entry->next_in_task = tm->task_entry_head[task_slot];
+    tm->task_entry_head[task_slot] = entry_offset;
 }
 
 void pto_tensormap_clear(PTORuntime* rt) {
-    // With memory pool, just clear the hash table pointers
-    // Pool entries are reused when pool index is reset
-    memset(rt->tensor_map, 0, sizeof(rt->tensor_map));
-    rt->tensormap_pool_next = 0;
+    TensorMap* tm = &rt->tensor_map;
+    for (int i = 0; i < PTO_TENSORMAP_SIZE; i++) {
+        tm->buckets[i] = -1;
+    }
+    for (int i = 0; i < PTO_TASK_WINDOW_SIZE; i++) {
+        tm->task_entry_head[i] = -1;
+    }
+    for (int i = 0; i < PTO_TENSORMAP_POOL_SIZE; i++) {
+        tm->entry_pool[i].in_bucket = false;
+        tm->entry_pool[i].next_in_bucket = -1;
+        tm->entry_pool[i].next_in_task = -1;
+        tm->entry_pool[i].producer_task_id = -1;
+        memset(&tm->entry_pool[i].region, 0, sizeof(TensorRegion));
+    }
+    tm->pool_head = 0;
+    tm->last_task_alive = rt->last_task_alive;
 }
 
-// Garbage collect - no longer needed
-// Stale entries are reused in-place during insert
 void pto_tensormap_gc(PTORuntime* rt) {
-    (void)rt;  // No-op: stale entries overwritten during insert
+    // No-op: stale tails are truncated during lookup; entries are unlinked on reuse.
+    (void)rt;
 }
 
 // =============================================================================
 // Task Allocation and Arguments (Platform Independent)
 // =============================================================================
 
+static inline int32_t pto_current_scope_depth(PTORuntime* rt) {
+    return rt->scope_stack_top + 1;
+}
+
+static inline void pto_task_fanout_lock(PendingTask* task) {
+    while (__atomic_exchange_n(&task->fanout_lock, 1, __ATOMIC_ACQUIRE) != 0) {
+        // spin
+    }
+}
+
+static inline void pto_task_fanout_unlock(PendingTask* task) {
+    __atomic_store_n(&task->fanout_lock, 0, __ATOMIC_RELEASE);
+}
+
+static inline int32_t pto_dep_list_next(int32_t off) {
+    off++;
+    if (off >= PTO_DEP_LIST_POOL_SIZE) return 1;
+    return off;
+}
+
+static int32_t pto_dep_list_alloc_one_locked(PTORuntime* rt) {
+    int32_t next = pto_dep_list_next(rt->dep_list_top);
+    if (next == rt->dep_list_tail) {
+        // Pool full: stall in execute/simulate; abort in dump/benchmark.
+        while (next == rt->dep_list_tail &&
+               (rt->runtime_mode == PTO_MODE_EXECUTE || rt->runtime_mode == PTO_MODE_SIMULATE)) {
+            pthread_cond_wait(&rt->window_not_full, &rt->task_mutex);
+            next = pto_dep_list_next(rt->dep_list_top);
+        }
+        if (next == rt->dep_list_tail) {
+            fprintf(stderr, "[PTO Runtime] ERROR: DepList pool full\n");
+            return 0;
+        }
+    }
+    int32_t off = rt->dep_list_top;
+    rt->dep_list_top = next;
+    return off;
+}
+
+static inline int32_t pto_align_up_i32(int32_t v, int32_t a) {
+    return (v + (a - 1)) & ~(a - 1);
+}
+
+static void* pto_heap_alloc_locked(PTORuntime* rt, int32_t size_bytes) {
+    if (!rt->heap_base || rt->heap_size <= 0) return NULL;
+    size_bytes = pto_align_up_i32(size_bytes, 64);
+    if (size_bytes <= 0 || size_bytes >= rt->heap_size) return NULL;
+
+    while (1) {
+        int32_t top = rt->heap_top;
+        int32_t tail = rt->heap_tail;
+
+        if (top >= tail) {
+            int32_t space_end = rt->heap_size - top;
+            if (space_end > size_bytes) {
+                void* ptr = rt->heap_base + top;
+                top += size_bytes;
+                if (top == rt->heap_size) top = 0;
+                rt->heap_top = top;
+                return ptr;
+            }
+            // wrap to 0
+            if (tail > size_bytes) {
+                rt->heap_top = size_bytes;
+                return rt->heap_base;
+            }
+        } else {
+            int32_t gap = tail - top;
+            if (gap > size_bytes) {
+                void* ptr = rt->heap_base + top;
+                rt->heap_top = top + size_bytes;
+                return ptr;
+            }
+        }
+
+        if (rt->runtime_mode == PTO_MODE_EXECUTE || rt->runtime_mode == PTO_MODE_SIMULATE) {
+            pthread_cond_wait(&rt->window_not_full, &rt->task_mutex);
+            continue;
+        }
+        return NULL;
+    }
+}
+
+bool pto_try_mark_consumed_locked(PTORuntime* rt, int32_t task_id) {
+    int32_t slot = PTO_TASK_SLOT(task_id);
+    PendingTask* task = &rt->pend_task[slot];
+    if (!task->is_active || task->task_id != task_id) return false;
+    if (task->is_consumed) return false;
+    if (!task->is_complete) return false;
+
+    pto_task_fanout_lock(task);
+    int32_t fanout_count = task->fanout_count;
+    pto_task_fanout_unlock(task);
+
+    if (rt->fanout_refcount[slot] != fanout_count) return false;
+
+    task->is_consumed = true;
+    rt->task_state[slot] = PTO_TASK_CONSUMED;
+    return true;
+}
+
+bool pto_advance_last_task_alive_locked(PTORuntime* rt) {
+    bool advanced = false;
+    while (rt->last_task_alive < rt->next_task_id) {
+        int32_t tid = rt->last_task_alive;
+        int32_t slot = PTO_TASK_SLOT(tid);
+        PendingTask* task = &rt->pend_task[slot];
+        if (!task->is_active || task->task_id != tid || !task->is_consumed) {
+            break;
+        }
+
+        // Advance heap_tail to end of last consumed packed buffer (if any)
+        if (task->packed_buffer_end && rt->heap_base) {
+            intptr_t off = (uint8_t*)task->packed_buffer_end - rt->heap_base;
+            if (off >= 0 && off <= rt->heap_size) {
+                rt->heap_tail = (int32_t)off;
+                if (rt->heap_tail == rt->heap_size) rt->heap_tail = 0;
+            }
+        }
+
+        // Advance dep list tail
+        if (task->dep_pool_end > 0) {
+            rt->dep_list_tail = task->dep_pool_end;
+        }
+
+        rt->last_task_alive++;
+        advanced = true;
+    }
+
+    // Sync TensorMap validity threshold
+    rt->tensor_map.last_task_alive = rt->last_task_alive;
+    return advanced;
+}
+
+void pto_scope_begin(PTORuntime* rt) {
+    if (!rt) return;
+    if (rt->scope_stack_top >= (int32_t)(sizeof(rt->scope_stack) / sizeof(rt->scope_stack[0])) - 1) {
+        fprintf(stderr, "[PTO Runtime] ERROR: scope stack overflow\n");
+        return;
+    }
+    // Scope begins at current task id (absolute).
+    rt->scope_stack[++rt->scope_stack_top] = rt->next_task_id;
+}
+
+int32_t pto_get_scope_depth(PTORuntime* rt) {
+    if (!rt) return 0;
+    return rt->scope_stack_top + 1;
+}
+
+void pto_scope_end(PTORuntime* rt) {
+    if (!rt) return;
+    if (rt->scope_stack_top < 0) {
+        fprintf(stderr, "[PTO Runtime] ERROR: scope_end with empty stack\n");
+        return;
+    }
+
+    pthread_mutex_lock(&rt->task_mutex);
+    int32_t begin = rt->scope_stack[rt->scope_stack_top--];
+    int32_t end = rt->next_task_id;
+
+    for (int32_t task_id = begin; task_id < end; task_id++) {
+        int32_t slot = PTO_TASK_SLOT(task_id);
+        PendingTask* task = &rt->pend_task[slot];
+        if (!task->is_active || task->task_id != task_id) continue;
+
+        // This scope releases one reference to the task's output buffer.
+        rt->fanout_refcount[slot]++;
+        pto_try_mark_consumed_locked(rt, task_id);
+    }
+
+    bool window_advanced = pto_advance_last_task_alive_locked(rt);
+    if (window_advanced) {
+        pthread_cond_broadcast(&rt->window_not_full);
+    }
+    pthread_mutex_unlock(&rt->task_mutex);
+}
+
 int32_t pto_task_alloc_impl(PTORuntime* rt, const char* func_name, void* func_ptr,
                             int32_t buffer_bytes, int32_t reuse_bytes, bool is_cube) {
     // Check if window is full
-    int32_t tasks_in_flight = rt->next_task_id - rt->window_oldest_pending;
+    int32_t tasks_in_flight = rt->next_task_id - rt->last_task_alive;
     
     if (tasks_in_flight >= PTO_TASK_WINDOW_SIZE) {
         // Window is full - behavior depends on runtime mode
         switch (rt->runtime_mode) {
             case PTO_MODE_BENCHMARK_ONLY:
                 // Benchmark mode: simulate window advancement to enable TensorMap cleanup
-                // Since no tasks actually complete, window_oldest_pending stays at 0,
+                // Since no tasks actually complete, last_task_alive stays at 0,
                 // causing TensorMap to grow unboundedly. By advancing it here, we allow
                 // stale entries to be reclaimed, keeping TensorMap size bounded.
-                rt->window_oldest_pending = rt->next_task_id - (PTO_TASK_WINDOW_SIZE / 2);
+                rt->last_task_alive = rt->next_task_id - (PTO_TASK_WINDOW_SIZE / 2);
+                rt->tensor_map.last_task_alive = rt->last_task_alive;
                 break;
                 
             case PTO_MODE_DUMP_GRAPH:
@@ -317,9 +582,9 @@ int32_t pto_task_alloc_impl(PTORuntime* rt, const char* func_name, void* func_pt
             case PTO_MODE_SIMULATE:
                 // Execute/simulate mode: wait for workers to complete tasks
                 pthread_mutex_lock(&rt->task_mutex);
-                while ((rt->next_task_id - rt->window_oldest_pending) >= PTO_TASK_WINDOW_SIZE) {
+                while ((rt->next_task_id - rt->last_task_alive) >= PTO_TASK_WINDOW_SIZE) {
                     DEBUG_PRINT("[PTO Runtime] Window full, waiting... (oldest=%d, next=%d)\n",
-                           rt->window_oldest_pending, rt->next_task_id);
+                           rt->last_task_alive, rt->next_task_id);
                     pthread_cond_wait(&rt->window_not_full, &rt->task_mutex);
                 }
                 pthread_mutex_unlock(&rt->task_mutex);
@@ -338,18 +603,36 @@ int32_t pto_task_alloc_impl(PTORuntime* rt, const char* func_name, void* func_pt
     task->func_ptr = func_ptr;
     task->cycle_func = NULL;  // Set via pto_task_set_cycle_func if needed
     task->num_args = 0;
+    task->num_outputs = 0;
+    task->packed_buffer_base = NULL;
+    task->packed_buffer_end = NULL;
+    task->dep_pool_end = rt->dep_list_top;
     task->buffer_size_bytes = buffer_bytes;
     task->buffer_size_with_reuse = reuse_bytes;
-    task->fanin = 0;
-    task->fanout_count = 0;
+    task->fanin_head = 0;
+    task->fanin_count = 0;
+    task->fanout_head = 0;
+    task->fanout_consumer_count = 0;
+    task->scope_depth = pto_current_scope_depth(rt);
+    task->fanout_count = task->scope_depth;
+    task->fanout_lock = 0;
     task->is_active = true;
+    task->is_submitted = false;
     task->is_complete = false;
+    task->is_consumed = false;
     task->is_cube = is_cube;
     task->earliest_start_cycle = 0;
     task->end_cycle = 0;
     
-    // Clear fanout list
-    memset(task->fanout, 0, sizeof(task->fanout));
+    for (int i = 0; i < PTO_MAX_ARGS; i++) {
+        task->output_arg_index[i] = -1;
+        task->output_offsets[i] = -1;
+    }
+
+    // Initialize scheduler state for this slot
+    rt->fanin_refcount[slot] = 0;
+    rt->fanout_refcount[slot] = 0;
+    rt->task_state[slot] = PTO_TASK_PENDING;
     
     rt->active_task_count++;
     rt->total_tasks_scheduled++;
@@ -394,40 +677,55 @@ void pto_task_add_input(PTORuntime* rt, int32_t task_id,
     arg->region = region;
     arg->is_output = false;
     
-    // Look up producer in TensorMap
+    // Look up producer in TensorMap and wire dependencies.
+    pthread_mutex_lock(&rt->task_mutex);
     int32_t producer_id = pto_tensormap_lookup(rt, &region);
-    
+
     if (producer_id >= 0 && producer_id != task_id) {
-        // Found producer - add dependency (needs mutex for pipelined execution)
-        pthread_mutex_lock(&rt->task_mutex);
-        
         PendingTask* producer = &rt->pend_task[PTO_TASK_SLOT(producer_id)];
-        
-        // Check if producer is already complete (pipelined execution race condition)
-        if (producer->is_complete) {
-            // Producer already done - no need to add dependency
-            pthread_mutex_unlock(&rt->task_mutex);
-            DEBUG_PRINT("[PTO Runtime] Task %d: producer %d already complete, no dependency added\n",
-                   task_id, producer_id);
-        } else {
-            // Add current task to producer's fanout
-            if (producer->fanout_count < PTO_MAX_FANOUT) {
-                producer->fanout[producer->fanout_count++] = task_id;
-            } else {
-                fprintf(stderr, "[PTO Runtime] WARNING: Fanout overflow for task %d\n", producer_id);
-            }
-            
-            // Increment fanin (dependency count)
-            task->fanin++;
-            
-            pthread_mutex_unlock(&rt->task_mutex);
-            DEBUG_PRINT("[PTO Runtime] Task %d depends on task %d (tensor=%p, offset=[%lld,%lld])\n",
-                   task_id, producer_id, tensor, (long long)row_off, (long long)col_off);
+        if (!producer->is_active || producer->task_id != producer_id || producer->is_consumed) {
+            // Should be filtered by TensorMap validity, but guard anyway.
+            producer_id = -1;
         }
+    }
+
+    if (producer_id >= 0 && producer_id != task_id) {
+        // Add producer to this task's fanin list
+        int32_t fanin_node = pto_dep_list_alloc_one_locked(rt);
+        if (fanin_node != 0) {
+            rt->dep_list_pool[fanin_node].task_id = producer_id;
+            rt->dep_list_pool[fanin_node].next_offset = task->fanin_head;
+            task->fanin_head = fanin_node;
+            task->fanin_count++;
+        }
+
+        // Add this task to producer's fanout list and increment total refcount
+        PendingTask* producer = &rt->pend_task[PTO_TASK_SLOT(producer_id)];
+        int32_t fanout_node = pto_dep_list_alloc_one_locked(rt);
+        if (fanout_node != 0) {
+            rt->dep_list_pool[fanout_node].task_id = task_id;
+            pto_task_fanout_lock(producer);
+            rt->dep_list_pool[fanout_node].next_offset = producer->fanout_head;
+            producer->fanout_head = fanout_node;
+            producer->fanout_consumer_count++;
+            producer->fanout_count++;  // +1 consumer reference
+            pto_task_fanout_unlock(producer);
+        }
+
+        // If producer already complete, dependency is immediately satisfied.
+        int32_t task_slot = PTO_TASK_SLOT(task_id);
+        if (producer->is_complete) {
+            rt->fanin_refcount[task_slot]++;
+        }
+
+        DEBUG_PRINT("[PTO Runtime] Task %d depends on task %d (tensor=%p, offset=[%lld,%lld])\n",
+               task_id, producer_id, tensor, (long long)row_off, (long long)col_off);
     } else {
         DEBUG_PRINT("[PTO Runtime] Task %d input (tensor=%p, offset=[%lld,%lld]) - no producer\n",
                task_id, tensor, (long long)row_off, (long long)col_off);
     }
+
+    pthread_mutex_unlock(&rt->task_mutex);
 }
 
 void pto_task_add_output(PTORuntime* rt, int32_t task_id,
@@ -458,13 +756,106 @@ void pto_task_add_output(PTORuntime* rt, int32_t task_id,
     TaskArg* arg = &task->args[task->num_args++];
     arg->region = region;
     arg->is_output = true;
-    
-    // Register in TensorMap (this task produces this region)
-    pto_tensormap_insert(rt, &region, task_id);
+
+    // Record output arg index; output regions are registered in TensorMap on submit.
+    if (task->num_outputs < PTO_MAX_ARGS) {
+        task->output_arg_index[task->num_outputs++] = task->num_args - 1;
+    }
     
     DEBUG_PRINT("[PTO Runtime] Task %d output (tensor=%p, offset=[%lld,%lld], shape=[%lld,%lld])\n",
            task_id, tensor, (long long)row_off, (long long)col_off,
            (long long)rows, (long long)cols);
+}
+
+static inline int32_t pto_align_up_i32(int32_t v, int32_t a);
+static void* pto_heap_alloc_locked(PTORuntime* rt, int32_t size_bytes);
+
+bool pto_task_prepare_submit(PTORuntime* rt, int32_t task_id) {
+    if (!rt || task_id < 0 || task_id >= rt->next_task_id) return false;
+
+    pthread_mutex_lock(&rt->task_mutex);
+    int32_t slot = PTO_TASK_SLOT(task_id);
+    PendingTask* task = &rt->pend_task[slot];
+    if (!task->is_active || task->task_id != task_id) {
+        pthread_mutex_unlock(&rt->task_mutex);
+        return false;
+    }
+    if (task->is_submitted) {
+        bool ready = (rt->task_state[slot] == PTO_TASK_READY);
+        pthread_mutex_unlock(&rt->task_mutex);
+        return ready;
+    }
+
+    // Allocate packed output buffer for outputs with NULL base pointer.
+    int64_t total_bytes = 0;
+    int32_t needs_alloc = 0;
+    for (int i = 0; i < task->num_outputs; i++) {
+        int arg_idx = task->output_arg_index[i];
+        if (arg_idx < 0 || arg_idx >= task->num_args) continue;
+        TaskArg* arg = &task->args[arg_idx];
+        if (arg->region.raw_tensor == NULL) {
+            if (arg->region.row_offset != 0 || arg->region.col_offset != 0) {
+                fprintf(stderr, "[PTO Runtime] ERROR: output alloc requires zero offsets (task %d)\n", task_id);
+                pthread_mutex_unlock(&rt->task_mutex);
+                return false;
+            }
+            int64_t bytes = arg->region.rows * arg->region.cols * (int64_t)sizeof(float);
+            bytes = pto_align_up_i32((int32_t)bytes, 64);
+            total_bytes += bytes;
+            needs_alloc++;
+        }
+    }
+
+    if (needs_alloc > 0) {
+        void* base = pto_heap_alloc_locked(rt, (int32_t)total_bytes);
+        if (!base) {
+            fprintf(stderr, "[PTO Runtime] ERROR: heap alloc failed for task %d (%lld bytes)\n",
+                    task_id, (long long)total_bytes);
+            pthread_mutex_unlock(&rt->task_mutex);
+            return false;
+        }
+        task->packed_buffer_base = base;
+        task->packed_buffer_end = (uint8_t*)base + (size_t)total_bytes;
+
+        int32_t off = 0;
+        for (int i = 0; i < task->num_outputs; i++) {
+            int arg_idx = task->output_arg_index[i];
+            TaskArg* arg = &task->args[arg_idx];
+            if (arg->region.raw_tensor == NULL) {
+                int32_t bytes = (int32_t)(arg->region.rows * arg->region.cols * (int64_t)sizeof(float));
+                bytes = pto_align_up_i32(bytes, 64);
+                arg->region.raw_tensor = (uint8_t*)base + off;
+                task->output_offsets[i] = off;
+                off += bytes;
+            } else {
+                task->output_offsets[i] = -1;
+            }
+        }
+    }
+
+    // Register outputs in TensorMap
+    for (int i = 0; i < task->num_outputs; i++) {
+        int arg_idx = task->output_arg_index[i];
+        if (arg_idx < 0 || arg_idx >= task->num_args) continue;
+        TaskArg* arg = &task->args[arg_idx];
+        pto_tensormap_insert(rt, &arg->region, task_id);
+    }
+
+    // Snapshot dep list pool for tail advancement.
+    task->dep_pool_end = rt->dep_list_top;
+
+    task->is_submitted = true;
+
+    // If all dependencies are satisfied, task is ready.
+    if (rt->fanin_refcount[slot] == task->fanin_count) {
+        rt->task_state[slot] = PTO_TASK_READY;
+        pthread_mutex_unlock(&rt->task_mutex);
+        return true;
+    }
+
+    rt->task_state[slot] = PTO_TASK_PENDING;
+    pthread_mutex_unlock(&rt->task_mutex);
+    return false;
 }
 
 // =============================================================================
@@ -742,7 +1133,7 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
     fprintf(fp, "================================================================================\n\n");
     
     // Determine dump range (limited by window)
-    int32_t dump_start = rt->window_oldest_pending;
+    int32_t dump_start = rt->last_task_alive;
     int32_t dump_end = rt->next_task_id;
     int32_t dump_count = dump_end - dump_start;
     if (dump_count > PTO_TASK_WINDOW_SIZE) {
@@ -754,6 +1145,7 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
     
     for (int32_t i = dump_start; i < dump_end; i++) {
         PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(i)];
+        if (!task->is_active || task->task_id != i) continue;
         
         fprintf(fp, "--------------------------------------------------------------------------------\n");
         fprintf(fp, "TASK %d (slot %d)\n", task->task_id, PTO_TASK_SLOT(i));
@@ -761,7 +1153,10 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
         fprintf(fp, "  Function:     %s\n", task->func_name ? task->func_name : "(null)");
         fprintf(fp, "  Func Ptr:     %p\n", task->func_ptr);
         fprintf(fp, "  Is Active:    %s\n", task->is_active ? "true" : "false");
+        fprintf(fp, "  Is Submitted: %s\n", task->is_submitted ? "true" : "false");
         fprintf(fp, "  Is Complete:  %s\n", task->is_complete ? "true" : "false");
+        fprintf(fp, "  Is Consumed:  %s\n", task->is_consumed ? "true" : "false");
+        fprintf(fp, "  Scope Depth:  %d\n", task->scope_depth);
         fprintf(fp, "\n");
         
         // Buffer size estimation
@@ -781,31 +1176,36 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
         // Fanin counter
         fprintf(fp, "  FANIN COUNTER\n");
         fprintf(fp, "  -------------\n");
-        fprintf(fp, "    fanin = %d\n", task->fanin);
+        {
+            int32_t slot = PTO_TASK_SLOT(i);
+            fprintf(fp, "    fanin_count     = %d\n", task->fanin_count);
+            fprintf(fp, "    fanin_refcount  = %d\n", rt->fanin_refcount[slot]);
+            fprintf(fp, "    fanin_remaining = %d\n", task->fanin_count - rt->fanin_refcount[slot]);
+        }
         fprintf(fp, "\n");
         
         // Fanout list
         fprintf(fp, "  FANOUT LIST (consumers that depend on this task)\n");
         fprintf(fp, "  ------------------------------------------------\n");
-        fprintf(fp, "    fanout_count = %d\n", task->fanout_count);
-        if (task->fanout_count > 0) {
-            fprintf(fp, "    fanout[] = [");
-            for (int j = 0; j < task->fanout_count; j++) {
-                fprintf(fp, "%d", task->fanout[j]);
-                if (j < task->fanout_count - 1) fprintf(fp, ", ");
-            }
-            fprintf(fp, "]\n");
-            
-            // Detailed fanout info
+        {
+            int32_t slot = PTO_TASK_SLOT(i);
+            fprintf(fp, "    fanout_total      = %d\n", task->fanout_count);
+            fprintf(fp, "    fanout_consumers  = %d\n", task->fanout_consumer_count);
+            fprintf(fp, "    fanout_refcount   = %d\n", rt->fanout_refcount[slot]);
             fprintf(fp, "    Consumers:\n");
-            for (int j = 0; j < task->fanout_count; j++) {
-                int32_t consumer_id = task->fanout[j];
+            int32_t off = task->fanout_head;
+            int32_t shown = 0;
+            while (off != 0 && shown < task->fanout_consumer_count) {
+                int32_t consumer_id = rt->dep_list_pool[off].task_id;
                 PendingTask* consumer = &rt->pend_task[PTO_TASK_SLOT(consumer_id)];
-                fprintf(fp, "      -> Task %d (%s)\n", consumer_id, 
-                        consumer->func_name ? consumer->func_name : "(null)");
+                fprintf(fp, "      -> Task %d (%s)\n", consumer_id,
+                        (consumer->is_active && consumer->func_name) ? consumer->func_name : "(null)");
+                off = rt->dep_list_pool[off].next_offset;
+                shown++;
             }
-        } else {
-            fprintf(fp, "    fanout[] = [] (no consumers)\n");
+            if (task->fanout_consumer_count == 0) {
+                fprintf(fp, "      (none)\n");
+            }
         }
         fprintf(fp, "\n");
         
@@ -851,18 +1251,21 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
     fprintf(fp, "================================================================================\n\n");
     int tensor_count = 0;
     for (int i = 0; i < PTO_TENSORMAP_SIZE; i++) {
-        TensorMapEntry* entry = rt->tensor_map[i];
-        while (entry) {
-            fprintf(fp, "  [bucket %d] tensor=%p, offset=[%lld,%lld], shape=[%lld,%lld] -> producer: Task %d\n",
-                    i,
-                    entry->region.raw_tensor,
-                    (long long)entry->region.row_offset,
-                    (long long)entry->region.col_offset,
-                    (long long)entry->region.rows,
-                    (long long)entry->region.cols,
-                    entry->producer_id);
-            tensor_count++;
-            entry = entry->next;
+        int32_t off = rt->tensor_map.buckets[i];
+        while (off >= 0) {
+            TensorMapEntry* entry = &rt->tensor_map.entry_pool[off];
+            if (entry->producer_task_id >= rt->last_task_alive) {
+                fprintf(fp, "  [bucket %d] tensor=%p, offset=[%lld,%lld], shape=[%lld,%lld] -> producer: Task %d\n",
+                        i,
+                        entry->region.raw_tensor,
+                        (long long)entry->region.row_offset,
+                        (long long)entry->region.col_offset,
+                        (long long)entry->region.rows,
+                        (long long)entry->region.cols,
+                        entry->producer_task_id);
+                tensor_count++;
+            }
+            off = entry->next_in_bucket;
         }
     }
     if (tensor_count == 0) {
@@ -877,22 +1280,27 @@ int pto_runtime_dump(PTORuntime* rt, const char* filename) {
     fprintf(fp, "================================================================================\n\n");
     for (int32_t i = dump_start; i < dump_end; i++) {
         PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(i)];
-        if (!task->is_active) continue;
+        if (!task->is_active || task->task_id != i) continue;
         
         // Status indicator
-        const char* status = task->is_complete ? "[DONE]" : 
-                            (task->fanin == 0 ? "[READY]" : "[WAIT]");
+        int32_t slot = PTO_TASK_SLOT(i);
+        const char* status = (rt->task_state[slot] == PTO_TASK_CONSUMED) ? "[CONSUMED]" :
+                             (rt->task_state[slot] == PTO_TASK_COMPLETED) ? "[DONE]" :
+                             (rt->task_state[slot] == PTO_TASK_READY) ? "[READY]" :
+                             "[WAIT]";
         
         fprintf(fp, "  Task %d (%s) %s\n", i, 
                 task->func_name ? task->func_name : "?", status);
         
-        if (task->fanout_count > 0) {
-            for (int j = 0; j < task->fanout_count; j++) {
-                int32_t consumer_id = task->fanout[j];
-                PendingTask* consumer = &rt->pend_task[PTO_TASK_SLOT(consumer_id)];
-                fprintf(fp, "    └──> Task %d (%s)\n", consumer_id,
-                        consumer->func_name ? consumer->func_name : "?");
-            }
+        int32_t off = task->fanout_head;
+        int32_t shown = 0;
+        while (off != 0 && shown < task->fanout_consumer_count) {
+            int32_t consumer_id = rt->dep_list_pool[off].task_id;
+            PendingTask* consumer = &rt->pend_task[PTO_TASK_SLOT(consumer_id)];
+            fprintf(fp, "    └──> Task %d (%s)\n", consumer_id,
+                    (consumer->is_active && consumer->func_name) ? consumer->func_name : "?");
+            off = rt->dep_list_pool[off].next_offset;
+            shown++;
         }
     }
     fprintf(fp, "\n");
@@ -919,12 +1327,12 @@ int pto_runtime_dump_stdout(PTORuntime* rt) {
     printf("  Total tasks completed:  %lld\n", (long long)rt->total_tasks_completed);
     printf("  Active task count:      %d\n", rt->active_task_count);
     printf("  Next task ID:           %d\n", rt->next_task_id);
-    printf("  Window oldest pending:  %d\n", rt->window_oldest_pending);
+    printf("  Last task alive:        %d\n", rt->last_task_alive);
     printf("  Ready queue size:       %d\n", rt->ready_count);
     printf("\n");
     
     // Determine dump range (limited by window)
-    int32_t dump_start = rt->window_oldest_pending;
+    int32_t dump_start = rt->last_task_alive;
     int32_t dump_end = rt->next_task_id;
     int32_t dump_count = dump_end - dump_start;
     if (dump_count > PTO_TASK_WINDOW_SIZE) {
@@ -936,17 +1344,18 @@ int pto_runtime_dump_stdout(PTORuntime* rt) {
     printf("--------------------------------------------------------------------------------\n");
     for (int32_t i = dump_start; i < dump_end; i++) {
         PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(i)];
-        const char* status = task->is_complete ? "DONE" : 
-                            (task->fanin == 0 ? "READY" : "WAIT");
+        if (!task->is_active || task->task_id != i) continue;
+        int32_t slot = PTO_TASK_SLOT(i);
+        const char* status = (rt->task_state[slot] == PTO_TASK_CONSUMED) ? "CONSUMED" :
+                             (rt->task_state[slot] == PTO_TASK_COMPLETED) ? "DONE" :
+                             (rt->task_state[slot] == PTO_TASK_READY) ? "READY" :
+                             "WAIT";
         
-        printf("  Task %d: %-20s [%s] fanin=%d buf=%.1fKB fanout=[",
-               i, task->func_name ? task->func_name : "?", status, task->fanin,
+        int32_t remaining = task->fanin_count - rt->fanin_refcount[slot];
+        printf("  Task %d: %-20s [%s] fanin_rem=%d fanout_cons=%d buf=%.1fKB\n",
+               i, task->func_name ? task->func_name : "?", status,
+               remaining, task->fanout_consumer_count,
                task->buffer_size_with_reuse / 1024.0);
-        for (int j = 0; j < task->fanout_count; j++) {
-            printf("%d", task->fanout[j]);
-            if (j < task->fanout_count - 1) printf(",");
-        }
-        printf("]\n");
     }
     printf("\n");
     
@@ -1100,7 +1509,7 @@ void pto_simulate_all(PTORuntime* rt) {
     
     // Process tasks in dependency order (within window)
     // For simulation, we assume all tasks are within the window (single-shot simulation)
-    int32_t sim_start = rt->window_oldest_pending;
+    int32_t sim_start = rt->last_task_alive;
     int32_t sim_end = rt->next_task_id;
     int32_t total_to_simulate = sim_end - sim_start;
     
@@ -1109,6 +1518,21 @@ void pto_simulate_all(PTORuntime* rt) {
                 total_to_simulate, PTO_TASK_WINDOW_SIZE, PTO_TASK_WINDOW_SIZE);
         sim_start = sim_end - PTO_TASK_WINDOW_SIZE;
         total_to_simulate = PTO_TASK_WINDOW_SIZE;
+    }
+
+    // Local dependency state for simulation
+    int32_t* remaining = (int32_t*)calloc((size_t)total_to_simulate, sizeof(int32_t));
+    if (!remaining) {
+        fprintf(stderr, "[PTO Simulator] ERROR: Failed to allocate remaining[]\n");
+        return;
+    }
+    for (int32_t task_id = sim_start; task_id < sim_end; task_id++) {
+        PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(task_id)];
+        if (!task->is_active || task->task_id != task_id) continue;
+        remaining[task_id - sim_start] = task->fanin_count;
+        task->is_complete = false;
+        task->end_cycle = 0;
+        task->earliest_start_cycle = 0;
     }
     
     int tasks_completed = 0;
@@ -1119,13 +1543,13 @@ void pto_simulate_all(PTORuntime* rt) {
         iteration++;
         bool made_progress = false;
         
-        // Find a ready task (fanin == 0 and not complete)
+        // Find a ready task (remaining deps == 0 and not complete)
         for (int32_t task_id = sim_start; task_id < sim_end; task_id++) {
             PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(task_id)];
             
-            if (task->is_complete || task->fanin > 0) {
-                continue;
-            }
+            if (!task->is_active || task->task_id != task_id) continue;
+            if (task->is_complete) continue;
+            if (remaining[task_id - sim_start] > 0) continue;
             
             // Found a ready task - simulate its execution
             const char* func_name = task->func_name ? task->func_name : "unknown";
@@ -1188,19 +1612,23 @@ void pto_simulate_all(PTORuntime* rt) {
             tasks_completed++;
             made_progress = true;
             
-            // Update dependencies - reduce fanin of dependent tasks
-            for (int i = 0; i < task->fanout_count; i++) {
-                int32_t dep_id = task->fanout[i];
+            // Update dependencies - reduce remaining deps of dependent tasks
+            int32_t off = task->fanout_head;
+            int32_t seen = 0;
+            while (off != 0 && seen < task->fanout_consumer_count) {
+                int32_t dep_id = rt->dep_list_pool[off].task_id;
                 if (dep_id >= sim_start && dep_id < sim_end) {
                     PendingTask* dep_task = &rt->pend_task[PTO_TASK_SLOT(dep_id)];
-                    if (dep_task->fanin > 0) {
-                        dep_task->fanin--;
-                    }
-                    // Update dependent task's earliest start time
-                    if (actual_end > dep_task->earliest_start_cycle) {
-                        dep_task->earliest_start_cycle = actual_end;
+                    if (dep_task->is_active && dep_task->task_id == dep_id) {
+                        int32_t idx = dep_id - sim_start;
+                        if (remaining[idx] > 0) remaining[idx]--;
+                        if (actual_end > dep_task->earliest_start_cycle) {
+                            dep_task->earliest_start_cycle = actual_end;
+                        }
                     }
                 }
+                off = rt->dep_list_pool[off].next_offset;
+                seen++;
             }
             
             DEBUG_PRINT("[Sim] Task %d: %s on Worker %d, cycles=[%lld, %lld], cost=%lld\n",
@@ -1262,4 +1690,5 @@ void pto_simulate_all(PTORuntime* rt) {
     printf("\n");
     
     rt->total_tasks_completed = tasks_completed;
+    free(remaining);
 }

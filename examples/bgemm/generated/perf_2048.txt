@@ -1,0 +1,15 @@
+BGEMM perf (Ascend A2/A3, PTO runtime)
+
+Command:
+  export ASCEND_HOME_PATH=$HOME/Ascend/ascend-toolkit/latest
+  timeout 900s PYTHONDONTWRITEBYTECODE=1 python3 examples/bgemm/pto_bgemm.py \
+    --ptoas ./bin/ptoas --ascend-home "$ASCEND_HOME_PATH" \
+    --device 0 --aic-blocks 24 \
+    --batch 2 --m 2048 --n 2048 --k 2048 --grid-m 4 --grid-n 4 \
+    --iters 5 --warmup 1 --check --check-samples 16
+
+Result:
+  avg_time_ms: 2.3653  (iters=5)
+  throughput: 14.53 TFLOPS (logical)  |  14.53 TFLOPS (executed)
+  check: OK (samples=16)
+

@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="700" viewBox="0 0 1800 700">
+<style>text{font-family:ui-monospace, SFMono-Regular, Menlo, monospace; fill:#111}.lane{fill:#fafafa}.laneAlt{fill:#f3f6fb}.axis{stroke:#222; stroke-width:1}.tick{stroke:#888; stroke-width:1}.bar{fill:#4C78A8; stroke:#2b4c6f; stroke-width:1}.label{font-size:11px; fill:#fff}.coreLabel{font-size:11px; fill:#222}.title{font-size:16px; font-weight:600}.sub{font-size:12px; fill:#333}</style>
+<rect x="0" y="0" width="1800" height="700" fill="#fff"/>
+<text class="title" x="120" y="26">Task trace (AICore)</text>
+<text class="sub" x="120" y="44">time unit: device sys_cnt ticks (relative), cores=24, tasks=32, span=40246</text>
+<line class="axis" x1="120" y1="60" x2="1770" y2="60"/>
+<line class="tick" x1="120.00" y1="54" x2="120.00" y2="66"/>
+<text x="120.00" y="50" font-size="10" text-anchor="middle">0</text>
+<line class="tick" x1="532.48" y1="54" x2="532.48" y2="66"/>
+<text x="532.48" y="50" font-size="10" text-anchor="middle">10061</text>
+<line class="tick" x1="945.00" y1="54" x2="945.00" y2="66"/>
+<text x="945.00" y="50" font-size="10" text-anchor="middle">20123</text>
+<line class="tick" x1="1357.48" y1="54" x2="1357.48" y2="66"/>
+<text x="1357.48" y="50" font-size="10" text-anchor="middle">30184</text>
+<line class="tick" x1="1770.00" y1="54" x2="1770.00" y2="66"/>
+<text x="1770.00" y="50" font-size="10" text-anchor="middle">40246</text>
+<rect class="lane" x="0" y="74" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="88" text-anchor="end">core 00</text>
+<rect class="laneAlt" x="0" y="98" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="112" text-anchor="end">core 01</text>
+<rect class="lane" x="0" y="122" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="136" text-anchor="end">core 02</text>
+<rect class="laneAlt" x="0" y="146" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="160" text-anchor="end">core 03</text>
+<rect class="lane" x="0" y="170" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="184" text-anchor="end">core 04</text>
+<rect class="laneAlt" x="0" y="194" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="208" text-anchor="end">core 05</text>
+<rect class="lane" x="0" y="218" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="232" text-anchor="end">core 06</text>
+<rect class="laneAlt" x="0" y="242" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="256" text-anchor="end">core 07</text>
+<rect class="lane" x="0" y="266" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="280" text-anchor="end">core 08</text>
+<rect class="laneAlt" x="0" y="290" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="304" text-anchor="end">core 09</text>
+<rect class="lane" x="0" y="314" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="328" text-anchor="end">core 10</text>
+<rect class="laneAlt" x="0" y="338" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="352" text-anchor="end">core 11</text>
+<rect class="lane" x="0" y="362" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="376" text-anchor="end">core 12</text>
+<rect class="laneAlt" x="0" y="386" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="400" text-anchor="end">core 13</text>
+<rect class="lane" x="0" y="410" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="424" text-anchor="end">core 14</text>
+<rect class="laneAlt" x="0" y="434" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="448" text-anchor="end">core 15</text>
+<rect class="lane" x="0" y="458" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="472" text-anchor="end">core 16</text>
+<rect class="laneAlt" x="0" y="482" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="496" text-anchor="end">core 17</text>
+<rect class="lane" x="0" y="506" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="520" text-anchor="end">core 18</text>
+<rect class="laneAlt" x="0" y="530" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="544" text-anchor="end">core 19</text>
+<rect class="lane" x="0" y="554" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="568" text-anchor="end">core 20</text>
+<rect class="laneAlt" x="0" y="578" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="592" text-anchor="end">core 21</text>
+<rect class="lane" x="0" y="602" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="616" text-anchor="end">core 22</text>
+<rect class="laneAlt" x="0" y="626" width="1800" height="24"/>
+<text class="coreLabel" x="110" y="640" text-anchor="end">core 23</text>
+<g>
+  <rect class="bar" x="120.00" y="76" width="797.61" height="14" rx="2" ry="2"/>
+  <text class="label" x="124.00" y="86">t0_5271b0</text>
+  <title>task 0 (t0_5271b0) | core 0 | start 0 | end 19455 | dur 19455</title>
+</g>
+<g>
+  <rect class="bar" x="1053.77" y="76" width="713.69" height="14" rx="2" ry="2"/>
+  <text class="label" x="1057.77" y="86">t5_d3ff0d</text>
+  <title>task 5 (t5_d3ff0d) | core 0 | start 22776 | end 40184 | dur 17408</title>
+</g>
+<g>
+  <rect class="bar" x="124.39" y="100" width="770.06" height="14" rx="2" ry="2"/>
+  <text class="label" x="128.39" y="110">t31_ff8556</text>
+  <title>task 31 (t31_ff8556) | core 1 | start 107 | end 18890 | dur 18783</title>
+</g>
+<g>
+  <rect class="bar" x="1062.54" y="100" width="702.42" height="14" rx="2" ry="2"/>
+  <text class="label" x="1066.54" y="110">t4_2abfd2</text>
+  <title>task 4 (t4_2abfd2) | core 1 | start 22990 | end 40123 | dur 17133</title>
+</g>
+<g>
+  <rect class="bar" x="125.08" y="124" width="766.29" height="14" rx="2" ry="2"/>
+  <text class="label" x="129.08" y="134">t30_81d4a1</text>
+  <title>task 30 (t30_81d4a1) | core 2 | start 124 | end 18815 | dur 18691</title>
+</g>
+<g>
+  <rect class="bar" x="1064.75" y="124" width="700.04" height="14" rx="2" ry="2"/>
+  <text class="label" x="1068.75" y="134">t3_c38267</text>
+  <title>task 3 (t3_c38267) | core 2 | start 23044 | end 40119 | dur 17075</title>
+</g>
+<g>
+  <rect class="bar" x="127.38" y="148" width="751.29" height="14" rx="2" ry="2"/>
+  <text class="label" x="131.38" y="158">t29_9f3d1b</text>
+  <title>task 29 (t29_9f3d1b) | core 3 | start 180 | end 18505 | dur 18325</title>
+</g>
+<g>
+  <rect class="bar" x="1072.59" y="148" width="697.41" height="14" rx="2" ry="2"/>
+  <text class="label" x="1076.59" y="158">t2_bcc97e</text>
+  <title>task 2 (t2_bcc97e) | core 3 | start 23235 | end 40246 | dur 17011</title>
+</g>
+<g>
+  <rect class="bar" x="128.20" y="172" width="750.10" height="14" rx="2" ry="2"/>
+  <text class="label" x="132.20" y="182">t28_b58a0d</text>
+  <title>task 28 (t28_b58a0d) | core 4 | start 200 | end 18496 | dur 18296</title>
+</g>
+<g>
+  <rect class="bar" x="1080.01" y="172" width="679.54" height="14" rx="2" ry="2"/>
+  <text class="label" x="1084.01" y="182">t1_c9ed42</text>
+  <title>task 1 (t1_c9ed42) | core 4 | start 23416 | end 39991 | dur 16575</title>
+</g>
+<g>
+  <rect class="bar" x="131.03" y="196" width="749.28" height="14" rx="2" ry="2"/>
+  <text class="label" x="135.03" y="206">t27_e6ff33</text>
+  <title>task 27 (t27_e6ff33) | core 5 | start 269 | end 18545 | dur 18276</title>
+</g>
+<g>
+  <rect class="bar" x="132.26" y="220" width="753.99" height="14" rx="2" ry="2"/>
+  <text class="label" x="136.26" y="230">t26_11aa89</text>
+  <title>task 26 (t26_11aa89) | core 6 | start 299 | end 18690 | dur 18391</title>
+</g>
+<g>
+  <rect class="bar" x="133.24" y="244" width="756.86" height="14" rx="2" ry="2"/>
+  <text class="label" x="137.24" y="254">t25_bb5f46</text>
+  <title>task 25 (t25_bb5f46) | core 7 | start 323 | end 18784 | dur 18461</title>
+</g>
+<g>
+  <rect class="bar" x="135.46" y="268" width="748.01" height="14" rx="2" ry="2"/>
+  <text class="label" x="139.46" y="278">t24_a3c501</text>
+  <title>task 24 (t24_a3c501) | core 8 | start 377 | end 18622 | dur 18245</title>
+</g>
+<g>
+  <rect class="bar" x="140.58" y="292" width="739.72" height="14" rx="2" ry="2"/>
+  <text class="label" x="144.58" y="302">t23_8b3665</text>
+  <title>task 23 (t23_8b3665) | core 9 | start 502 | end 18545 | dur 18043</title>
+</g>
+<g>
+  <rect class="bar" x="142.71" y="316" width="722.87" height="14" rx="2" ry="2"/>
+  <text class="label" x="146.71" y="326">t22_a2e2e6</text>
+  <title>task 22 (t22_a2e2e6) | core 10 | start 554 | end 18186 | dur 17632</title>
+</g>
+<g>
+  <rect class="bar" x="872.72" y="316" width="665.76" height="14" rx="2" ry="2"/>
+  <text class="label" x="876.72" y="326">t8_ed1e60</text>
+  <title>task 8 (t8_ed1e60) | core 10 | start 18360 | end 34599 | dur 16239</title>
+</g>
+<g>
+  <rect class="bar" x="144.15" y="340" width="726.44" height="14" rx="2" ry="2"/>
+  <text class="label" x="148.15" y="350">t21_558c9c</text>
+  <title>task 21 (t21_558c9c) | core 11 | start 589 | end 18308 | dur 17719</title>
+</g>
+<g>
+  <rect class="bar" x="146.73" y="364" width="727.59" height="14" rx="2" ry="2"/>
+  <text class="label" x="150.73" y="374">t20_d35d96</text>
+  <title>task 20 (t20_d35d96) | core 12 | start 652 | end 18399 | dur 17747</title>
+</g>
+<g>
+  <rect class="bar" x="147.84" y="388" width="738.04" height="14" rx="2" ry="2"/>
+  <text class="label" x="151.84" y="398">t19_ebb6cb</text>
+  <title>task 19 (t19_ebb6cb) | core 13 | start 679 | end 18681 | dur 18002</title>
+</g>
+<g>
+  <rect class="bar" x="149.07" y="412" width="737.10" height="14" rx="2" ry="2"/>
+  <text class="label" x="153.07" y="422">t18_16be4b</text>
+  <title>task 18 (t18_16be4b) | core 14 | start 709 | end 18688 | dur 17979</title>
+</g>
+<g>
+  <rect class="bar" x="150.34" y="436" width="722.79" height="14" rx="2" ry="2"/>
+  <text class="label" x="154.34" y="446">t17_479f5e</text>
+  <title>task 17 (t17_479f5e) | core 15 | start 740 | end 18370 | dur 17630</title>
+</g>
+<g>
+  <rect class="bar" x="881.99" y="436" width="702.79" height="14" rx="2" ry="2"/>
+  <text class="label" x="885.99" y="446">t7_3a4fe0</text>
+  <title>task 7 (t7_3a4fe0) | core 15 | start 18586 | end 35728 | dur 17142</title>
+</g>
+<g>
+  <rect class="bar" x="152.68" y="460" width="719.51" height="14" rx="2" ry="2"/>
+  <text class="label" x="156.68" y="470">t16_2dc0b0</text>
+  <title>task 16 (t16_2dc0b0) | core 16 | start 797 | end 18347 | dur 17550</title>
+</g>
+<g>
+  <rect class="bar" x="884.12" y="460" width="697.29" height="14" rx="2" ry="2"/>
+  <text class="label" x="888.12" y="470">t6_79ac4a</text>
+  <title>task 6 (t6_79ac4a) | core 16 | start 18638 | end 35646 | dur 17008</title>
+</g>
+<g>
+  <rect class="bar" x="156.12" y="484" width="729.84" height="14" rx="2" ry="2"/>
+  <text class="label" x="160.12" y="494">t15_2b2e70</text>
+  <title>task 15 (t15_2b2e70) | core 17 | start 881 | end 18683 | dur 17802</title>
+</g>
+<g>
+  <rect class="bar" x="159.77" y="508" width="751.53" height="14" rx="2" ry="2"/>
+  <text class="label" x="163.77" y="518">t14_d8f666</text>
+  <title>task 14 (t14_d8f666) | core 18 | start 970 | end 19301 | dur 18331</title>
+</g>
+<g>
+  <rect class="bar" x="162.84" y="532" width="750.96" height="14" rx="2" ry="2"/>
+  <text class="label" x="166.84" y="542">t13_bd7b2b</text>
+  <title>task 13 (t13_bd7b2b) | core 19 | start 1045 | end 19362 | dur 18317</title>
+</g>
+<g>
+  <rect class="bar" x="165.26" y="556" width="752.35" height="14" rx="2" ry="2"/>
+  <text class="label" x="169.26" y="566">t12_f17536</text>
+  <title>task 12 (t12_f17536) | core 20 | start 1104 | end 19455 | dur 18351</title>
+</g>
+<g>
+  <rect class="bar" x="166.61" y="580" width="744.19" height="14" rx="2" ry="2"/>
+  <text class="label" x="170.61" y="590">t11_d420fb</text>
+  <title>task 11 (t11_d420fb) | core 21 | start 1137 | end 19289 | dur 18152</title>
+</g>
+<g>
+  <rect class="bar" x="167.56" y="604" width="743.91" height="14" rx="2" ry="2"/>
+  <text class="label" x="171.56" y="614">t10_e1e4c9</text>
+  <title>task 10 (t10_e1e4c9) | core 22 | start 1160 | end 19305 | dur 18145</title>
+</g>
+<g>
+  <rect class="bar" x="168.71" y="628" width="746.20" height="14" rx="2" ry="2"/>
+  <text class="label" x="172.71" y="638">t9_615a2f</text>
+  <title>task 9 (t9_615a2f) | core 23 | start 1188 | end 19389 | dur 18201</title>
+</g>
+<text class="sub" x="120" y="682">Tip: hover a bar to see exact start/end ticks + duration.</text>
+</svg>

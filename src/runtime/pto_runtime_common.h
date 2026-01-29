@@ -38,10 +38,11 @@
 #define PTO_MAX_TASKS          PTO_TASK_WINDOW_SIZE  // Alias for backward compatibility
 #define PTO_TASK_SLOT(task_id) ((task_id) & (PTO_TASK_WINDOW_SIZE - 1))  // Fast modulo (window must be power of 2)
 
-#define PTO_MAX_FANOUT         512     // Maximum fanout per task
 #define PTO_MAX_ARGS           16      // Maximum arguments per task
-#define PTO_TENSORMAP_SIZE     8192   // Hash table size for tensor map (8K buckets, must be power of 2)
-#define PTO_TENSORMAP_POOL_SIZE 32768 // Memory pool size for TensorMap entries (32K entries)
+#define PTO_TENSORMAP_SIZE     PTO_TASK_WINDOW_SIZE       // Hash bucket count (power of 2)
+#define PTO_TENSORMAP_POOL_SIZE (PTO_TASK_WINDOW_SIZE * 4) // Ring pool entries (headroom for multiple outputs)
+#define PTO_DEP_LIST_POOL_SIZE (PTO_TASK_WINDOW_SIZE * 16) // Dep list nodes (fanin+fanout headroom)
+#define PTO_HEAP_SIZE_BYTES    (64 * 1024 * 1024)          // Packed output heap (host/sim default)
 #define PTO_MAX_READY_QUEUE    65536   // Ready queue size (64K, 2x window for safety)
 #define PTO_MAX_WORKERS        128     // Maximum worker threads (A2A3: 48 vector + 24 cube = 72)
 
@@ -86,6 +87,35 @@ typedef struct {
     bool         is_output;  // True if this is an output argument
 } TaskArg;
 
+// =============================================================================
+// Dependency List Pool (Ring Buffer of Linked-List Nodes)
+// =============================================================================
+
+typedef struct {
+    int32_t task_id;      // Dependent/dependency task id
+    int32_t next_offset;  // Next node offset (0 = end)
+} DepListEntry;
+
+// =============================================================================
+// TensorMap (Ring Buffer + Hash Chains with Lazy Invalidation)
+// =============================================================================
+
+typedef struct {
+    TensorRegion region;        // Tensor region key
+    int32_t producer_task_id;   // Producing task (absolute id)
+    int32_t next_in_bucket;     // Next in hash chain (-1 = end)
+    int32_t next_in_task;       // Next for same task (-1 = end)
+    bool in_bucket;             // True if linked in a bucket chain
+} TensorMapEntry;
+
+typedef struct {
+    int32_t buckets[PTO_TENSORMAP_SIZE];                 // Offsets into entry_pool (-1 empty)
+    TensorMapEntry entry_pool[PTO_TENSORMAP_POOL_SIZE];  // Ring pool
+    int32_t pool_head;                                  // Next allocation slot (wraps)
+    int32_t task_entry_head[PTO_TASK_WINDOW_SIZE];       // Per-task entry head (task_id % window)
+    int32_t last_task_alive;                             // Cached validity threshold
+} TensorMap;
+
 /**
  * Cycle cost function pointer type
  * Returns estimated cycle count for the InCore function
@@ -105,19 +135,35 @@ typedef struct {
     // Arguments
     TaskArg      args[PTO_MAX_ARGS];         // Input/output arguments
     int32_t      num_args;                   // Number of arguments
+
+    // Outputs (subset of args[] where is_output==true)
+    int32_t      output_arg_index[PTO_MAX_ARGS];  // Indices into args[]
+    int32_t      num_outputs;
+
+    // Packed output buffer (runtime-managed, optional)
+    void*        packed_buffer_base;
+    void*        packed_buffer_end;
+    int32_t      output_offsets[PTO_MAX_ARGS];    // Byte offsets within packed buffer (-1 for external)
+    int32_t      dep_pool_end;                    // DepList pool top snapshot after submit
     
     // Buffer size estimation
     int32_t      buffer_size_bytes;          // Estimated InCore tile buffer size
     int32_t      buffer_size_with_reuse;     // Buffer size with reuse optimization
     
-    // Dependency tracking
-    int32_t      fanin;                      // Number of input dependencies remaining
-    int32_t      fanout[PTO_MAX_FANOUT];     // Task IDs that depend on this task
-    int32_t      fanout_count;               // Number of dependent tasks
+    // Dependency tracking (static; written by orchestrator)
+    int32_t      fanin_head;                 // DepListEntry offset (0 = none)
+    int32_t      fanin_count;                // Total dependencies (immutable after submit)
+    int32_t      fanout_head;                // DepListEntry offset (consumers only)
+    int32_t      fanout_consumer_count;      // Consumers count (fanout list length)
+    int32_t      fanout_count;               // Total refs = scope_depth + consumers
+    int32_t      scope_depth;                // Depth at creation time
+    volatile int32_t fanout_lock;            // Protect fanout_head/fanout_count atomicity
     
     // Status
     bool         is_active;                  // Task slot is in use
+    bool         is_submitted;               // Task has been submitted to scheduler
     bool         is_complete;                // Task has finished execution
+    bool         is_consumed;                // Output fully consumed (eligible for reclamation)
     
     // Worker type hint (for heterogeneous backends like a2a3)
     bool         is_cube;                    // True if requires cube unit (matmul)
@@ -126,16 +172,6 @@ typedef struct {
     int64_t      earliest_start_cycle;       // Earliest time this task can start (after deps)
     int64_t      end_cycle;                  // Time when this task finished
 } PendingTask;
-
-/**
- * TensorMap entry - maps tensor region to producing task
- * Used for automatic dependency discovery
- */
-typedef struct TensorMapEntry {
-    TensorRegion           region;       // Tensor region key
-    int32_t                producer_id;  // Task that produces this region
-    struct TensorMapEntry* next;         // Next entry in hash chain
-} TensorMapEntry;
 
 // =============================================================================
 // Cycle Trace Data Structures
@@ -181,6 +217,14 @@ typedef enum {
     PTO_MODE_SIMULATE             // Stall when window full (cycle-accurate simulation)
 } PTORuntimeMode;
 
+typedef enum {
+    PTO_TASK_PENDING = 0,
+    PTO_TASK_READY = 1,
+    PTO_TASK_RUNNING = 2,
+    PTO_TASK_COMPLETED = 3,
+    PTO_TASK_CONSUMED = 4,
+} PTOTaskState;
+
 /**
  * PTO Runtime context
  * 
@@ -196,17 +240,29 @@ typedef struct PTORuntime {
     int32_t      next_task_id;                // Next task ID to allocate (absolute, not wrapped)
     int32_t      active_task_count;           // Number of active tasks in window
     
-    // Sliding window tracking
-    int32_t      window_oldest_pending;       // Oldest task not yet completed (absolute ID)
+    // Sliding window tracking (oldest task not yet CONSUMED)
+    int32_t      last_task_alive;             // Oldest task not yet consumed (absolute ID)
     bool         window_aborted;              // True if orchestration was aborted due to full window
     PTORuntimeMode runtime_mode;              // Current execution mode
     
-    // TensorMap for dependency tracking
-    TensorMapEntry* tensor_map[PTO_TENSORMAP_SIZE];
-    
-    // TensorMap memory pool (avoids malloc/free overhead)
-    TensorMapEntry* tensormap_pool;       // Pre-allocated pool of entries
-    int32_t         tensormap_pool_next;  // Next available entry in pool
+    // Dependency list pool (ring buffer)
+    DepListEntry dep_list_pool[PTO_DEP_LIST_POOL_SIZE];
+    int32_t      dep_list_top;            // Next allocation offset (0 reserved for NULL)
+    int32_t      dep_list_tail;           // Oldest live offset (tracks last_task_alive)
+
+    // TensorMap for dependency tracking (ring buffer + lazy invalidation)
+    TensorMap     tensor_map;
+
+    // Packed output heap ring (host/sim)
+    uint8_t*      heap_base;
+    int32_t       heap_size;
+    int32_t       heap_top;               // Allocation pointer (bytes, wraps)
+    int32_t       heap_tail;              // Free pointer (bytes, tracks last_task_alive)
+
+    // Scheduler-owned dynamic state arrays (indexed by PTO_TASK_SLOT(task_id))
+    int32_t       fanin_refcount[PTO_TASK_WINDOW_SIZE];
+    int32_t       fanout_refcount[PTO_TASK_WINDOW_SIZE];
+    uint8_t       task_state[PTO_TASK_WINDOW_SIZE];
     
     // Statistics (absolute counts, not affected by window wrap)
     int64_t      total_tasks_scheduled;
@@ -261,6 +317,10 @@ typedef struct PTORuntime {
     
     // Orchestration thread (A2A3)
     pthread_t         orch_thread;           // Orchestration thread handle
+
+    // Scope stack (orchestrator only)
+    int32_t           scope_stack[1024];
+    int32_t           scope_stack_top;
     
     // =========================================================================
     // Platform-Specific: Mode Configuration
@@ -331,6 +391,14 @@ void pto_runtime_reset(PTORuntime* rt);
 void pto_runtime_stats(PTORuntime* rt);
 
 // =============================================================================
+// Orchestrator Scope API (buffer lifetime management)
+// =============================================================================
+
+void pto_scope_begin(PTORuntime* rt);
+void pto_scope_end(PTORuntime* rt);
+int32_t pto_get_scope_depth(PTORuntime* rt);
+
+// =============================================================================
 // Platform-Independent API: Task Allocation and Arguments
 // =============================================================================
 
@@ -385,11 +453,27 @@ void pto_task_add_input(PTORuntime* rt, int32_t task_id,
 
 /**
  * Add an output argument to a task
- * Registers the output in TensorMap
+ * Output regions are registered in TensorMap on task submit.
  */
 void pto_task_add_output(PTORuntime* rt, int32_t task_id,
                          void* tensor, int64_t row_off, int64_t col_off,
                          int64_t rows, int64_t cols);
+
+/**
+ * Finalize a task for submission:
+ * - Allocates packed outputs for output args with NULL base pointer
+ * - Registers outputs in TensorMap
+ * - Marks task as submitted
+ * @return true if task is ready (all deps satisfied)
+ */
+bool pto_task_prepare_submit(PTORuntime* rt, int32_t task_id);
+
+// =============================================================================
+// Internal Helpers (callers must hold rt->task_mutex)
+// =============================================================================
+
+bool pto_try_mark_consumed_locked(PTORuntime* rt, int32_t task_id);
+bool pto_advance_last_task_alive_locked(PTORuntime* rt);
 
 // =============================================================================
 // Platform-Independent API: TensorMap
@@ -423,9 +507,8 @@ void pto_tensormap_clear(PTORuntime* rt);
 
 /**
  * Garbage collect stale entries from the tensor map
- * Removes entries with producer_id < window_oldest_pending
- * This is called automatically during lookup/insert, but can be
- * called explicitly for bulk cleanup
+ * No-op in current design: stale tails are truncated during lookup and
+ * entries are unlinked from buckets on pool reuse.
  */
 void pto_tensormap_gc(PTORuntime* rt);
 

@@ -156,15 +156,16 @@ void pto_task_submit(PTORuntime* rt, int32_t task_id) {
     
     PendingTask* task = &rt->pend_task[PTO_TASK_SLOT(task_id)];
     
-    DEBUG_PRINT("[PTO Runtime ARM64] Submitted task %d: %s (fanin=%d, fanout=%d, is_cube=%d)\n",
-           task_id, task->func_name, task->fanin, task->fanout_count, task->is_cube);
+    bool ready = pto_task_prepare_submit(rt, task_id);
+    int32_t slot = PTO_TASK_SLOT(task_id);
+    int32_t remaining = task->fanin_count - rt->fanin_refcount[slot];
+    DEBUG_PRINT("[PTO Runtime ARM64] Submitted task %d: %s (fanin_rem=%d, fanout_cons=%d)\n",
+           task_id, task->func_name, remaining, task->fanout_consumer_count);
     
-    // If no dependencies, add directly to ready queue (thread-safe)
-    if (task->fanin == 0) {
+    if (ready) {
         ready_queue_push_threadsafe(rt, task_id);
-        DEBUG_PRINT("[PTO Runtime ARM64] Task %d is ready (no dependencies)\n", task_id);
+        DEBUG_PRINT("[PTO Runtime ARM64] Task %d is ready\n", task_id);
     }
-    // Tasks with fanin > 0 stay in pend_task until dependencies complete
 }
 
 // =============================================================================
@@ -172,48 +173,8 @@ void pto_task_submit(PTORuntime* rt, int32_t task_id) {
 // =============================================================================
 
 void pto_task_complete(PTORuntime* rt, int32_t task_id) {
-    if (task_id < 0 || task_id >= rt->next_task_id) {
-        fprintf(stderr, "[PTO Runtime ARM64] ERROR: Invalid task_id %d\n", task_id);
-        return;
-    }
-    
-    int32_t slot = PTO_TASK_SLOT(task_id);
-    PendingTask* task = &rt->pend_task[slot];
-    
-    task->is_complete = true;
-    rt->active_task_count--;
-    rt->total_tasks_completed++;
-    
-    // Advance window_oldest_pending if this was the oldest task
-    while (rt->window_oldest_pending < rt->next_task_id) {
-        int32_t oldest_slot = PTO_TASK_SLOT(rt->window_oldest_pending);
-        if (!rt->pend_task[oldest_slot].is_complete) break;
-        rt->window_oldest_pending++;
-    }
-    
-    DEBUG_PRINT("[PTO Runtime ARM64] Completed task %d: %s\n", task_id, task->func_name);
-    
-    // Update dependent tasks (distributed dependency propagation)
-    for (int i = 0; i < task->fanout_count; i++) {
-        int32_t dep_id = task->fanout[i];
-        int32_t dep_slot = PTO_TASK_SLOT(dep_id);
-        PendingTask* dep_task = &rt->pend_task[dep_slot];
-        
-        // Update earliest_start_cycle of dependent task
-        if (task->end_cycle > dep_task->earliest_start_cycle) {
-            dep_task->earliest_start_cycle = task->end_cycle;
-        }
-        
-        // Decrement fanin
-        dep_task->fanin--;
-        DEBUG_PRINT("[PTO Runtime ARM64] Task %d fanin decremented to %d\n", 
-               dep_id, dep_task->fanin);
-        
-        if (dep_task->fanin == 0 && !dep_task->is_complete) {
-            ready_queue_push(rt, dep_id);
-            DEBUG_PRINT("[PTO Runtime ARM64] Task %d is now ready\n", dep_id);
-        }
-    }
+    // For correctness, reuse the threadsafe completion logic.
+    pto_task_complete_threadsafe(rt, task_id);
 }
 
 void pto_task_complete_threadsafe(PTORuntime* rt, int32_t task_id) {
@@ -226,60 +187,71 @@ void pto_task_complete_threadsafe(PTORuntime* rt, int32_t task_id) {
     
     int32_t slot = PTO_TASK_SLOT(task_id);
     PendingTask* task = &rt->pend_task[slot];
-    
+
+    // Skip stale or already-complete slots (can happen in pipelined mode)
+    if (!task->is_active || task->task_id != task_id || task->is_complete) {
+        pthread_mutex_unlock(&rt->task_mutex);
+        return;
+    }
+
     task->is_complete = true;
+    rt->task_state[slot] = PTO_TASK_COMPLETED;
     rt->active_task_count--;
     rt->total_tasks_completed++;
-    
-    // Advance window_oldest_pending if this was the oldest task
-    bool window_advanced = false;
-    while (rt->window_oldest_pending < rt->next_task_id) {
-        int32_t oldest_slot = PTO_TASK_SLOT(rt->window_oldest_pending);
-        if (!rt->pend_task[oldest_slot].is_complete) break;
-        rt->window_oldest_pending++;
-        window_advanced = true;
-    }
-    
-    DEBUG_PRINT("[PTO Runtime ARM64] Completed task %d: %s (completed=%lld/%lld)\n", 
-           task_id, task->func_name, 
-           (long long)rt->total_tasks_completed, 
-           (long long)rt->total_tasks_scheduled);
-    
-    // Collect tasks that become ready
-    int32_t newly_ready[PTO_MAX_FANOUT];
-    int32_t newly_ready_count = 0;
-    
-    for (int i = 0; i < task->fanout_count; i++) {
-        int32_t dep_id = task->fanout[i];
-        int32_t dep_slot = PTO_TASK_SLOT(dep_id);
-        PendingTask* dep_task = &rt->pend_task[dep_slot];
-        
-        dep_task->fanin--;
-        DEBUG_PRINT("[PTO Runtime ARM64] Task %d fanin decremented to %d\n", 
-               dep_id, dep_task->fanin);
-        
-        if (dep_task->fanin == 0 && !dep_task->is_complete) {
-            newly_ready[newly_ready_count++] = dep_id;
+
+    // Notify dependents: increment fanin_refcount, enqueue when ready.
+    int32_t off = task->fanout_head;
+    int32_t seen = 0;
+    while (off != 0 && seen < task->fanout_consumer_count) {
+        int32_t consumer_id = rt->dep_list_pool[off].task_id;
+        int32_t cslot = PTO_TASK_SLOT(consumer_id);
+        PendingTask* consumer = &rt->pend_task[cslot];
+
+        if (consumer->is_active && consumer->task_id == consumer_id) {
+            rt->fanin_refcount[cslot]++;
+            if (task->end_cycle > consumer->earliest_start_cycle) {
+                consumer->earliest_start_cycle = task->end_cycle;
+            }
+
+            if (consumer->is_submitted &&
+                rt->task_state[cslot] == PTO_TASK_PENDING &&
+                rt->fanin_refcount[cslot] == consumer->fanin_count) {
+                rt->task_state[cslot] = PTO_TASK_READY;
+                ready_queue_push_threadsafe(rt, consumer_id);
+            }
         }
+
+        off = rt->dep_list_pool[off].next_offset;
+        seen++;
     }
-    
-    // Check if all tasks completed
+
+    // Release references to producers (fanout_refcount increments).
+    off = task->fanin_head;
+    while (off != 0) {
+        int32_t producer_id = rt->dep_list_pool[off].task_id;
+        int32_t pslot = PTO_TASK_SLOT(producer_id);
+        PendingTask* producer = &rt->pend_task[pslot];
+
+        if (producer->is_active && producer->task_id == producer_id) {
+            rt->fanout_refcount[pslot]++;
+            pto_try_mark_consumed_locked(rt, producer_id);
+        }
+
+        off = rt->dep_list_pool[off].next_offset;
+    }
+
+    // Check if this task can be consumed.
+    pto_try_mark_consumed_locked(rt, task_id);
+
+    bool window_advanced = pto_advance_last_task_alive_locked(rt);
     bool all_done = (rt->total_tasks_completed >= rt->total_tasks_scheduled);
-    
-    // Signal window_not_full if window advanced (allow more task submissions)
+
     if (window_advanced) {
         pthread_cond_broadcast(&rt->window_not_full);
     }
-    
+
     pthread_mutex_unlock(&rt->task_mutex);
-    
-    // Add newly ready tasks to queue (outside task_mutex to avoid deadlock)
-    for (int i = 0; i < newly_ready_count; i++) {
-        ready_queue_push_threadsafe(rt, newly_ready[i]);
-        DEBUG_PRINT("[PTO Runtime ARM64] Task %d is now ready\n", newly_ready[i]);
-    }
-    
-    // Signal if all tasks are done
+
     if (all_done) {
         pthread_mutex_lock(&rt->queue_mutex);
         pthread_cond_broadcast(&rt->all_done);
@@ -349,16 +321,14 @@ void pto_execute_task_with_worker(PTORuntime* rt, int32_t task_id, int32_t worke
 void pto_execute_all(PTORuntime* rt) {
     printf("\n[PTO Runtime ARM64] ======== Executing all tasks ========\n");
     
-    while (rt->ready_count > 0 || rt->active_task_count > (int32_t)rt->total_tasks_completed) {
+    while (rt->total_tasks_completed < rt->total_tasks_scheduled) {
         int32_t task_id = pto_get_ready_task(rt);
         
         if (task_id < 0) {
             // No ready tasks - check for deadlock
-            if (rt->active_task_count > (int32_t)rt->total_tasks_completed) {
-                fprintf(stderr, "[PTO Runtime ARM64] WARNING: No ready tasks but %d tasks pending - possible deadlock\n",
-                        rt->active_task_count - (int32_t)rt->total_tasks_completed);
-                break;
-            }
+            fprintf(stderr, "[PTO Runtime ARM64] WARNING: No ready tasks but %lld/%lld tasks completed - possible deadlock\n",
+                    (long long)rt->total_tasks_completed, (long long)rt->total_tasks_scheduled);
+            break;
             continue;
         }
         
@@ -373,7 +343,7 @@ void pto_execute_all(PTORuntime* rt) {
         }
         
         // Mark complete and update dependencies
-        pto_task_complete(rt, task_id);
+        pto_task_complete_threadsafe(rt, task_id);
     }
     
     printf("Execution complete!\n");

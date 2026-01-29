@@ -92,12 +92,8 @@ def main() -> int:
 
     cfg = PtoasConfig(
         ptoas=repo_root / "bin" / "ptoas",
-        arch="dav-c220-cube",
         memory_model="MEMORY_BASE",
-        kernel_abi="mpmd",
-        insert_events=False,
-        assign_tile_addrs=False,
-        ascend_home=ascend_home,
+        enable_insert_sync=False,
         repo_root=repo_root,
         timeout_s=float(os.environ.get("PTO_PTOAS_TIMEOUT_S", "0") or "0") or None,
         log_path=out_dir / "ptoas.log",

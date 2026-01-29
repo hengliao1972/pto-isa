@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import secrets
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -431,3 +432,77 @@ class DeviceRunner:
         self._initialized = False
         self._cube_blocks = 0
         return int(lib.DeviceRunner_Finalize())
+
+
+class OrchestrationRuntime:
+    """
+    Helper for "orchestration functions" that build a task graph and run it via the
+    device-side scheduler (AICPU).
+
+    Notes:
+    - The orchestration code itself runs on the host CPU (Python), but *execution*
+      is performed by launching the AICPU scheduler kernel which dispatches tasks
+      to AICore workers.
+    - Dependency tracking here is intentionally lightweight. Use explicit
+      `graph.add_successor(...)` when you need precise dependencies.
+    """
+
+    def __init__(self, *, runner: DeviceRunner, launch_aicpu_num: int = 1) -> None:
+        if not isinstance(runner, DeviceRunner):
+            raise TypeError("OrchestrationRuntime requires a DeviceRunner")
+        self.runner = runner
+        self.graph = Graph()
+        self.launch_aicpu_num = int(launch_aicpu_num)
+        # Coarse dependency map: "a buffer was last written by task X".
+        self._last_writer: dict[int, int] = {}
+        self._task_names: dict[int, str] = {}
+
+    def add_task(
+        self,
+        args: list[Any],
+        *,
+        func_id: int,
+        core_type: int = 1,
+        name: str | None = None,
+        reads: list[int] | None = None,
+        writes: list[int] | None = None,
+    ) -> int:
+        """
+        Add a task to the graph and optionally add coarse dependencies.
+
+        `reads`/`writes` are device pointers (ints). If a read pointer was last
+        written by another task, a dependency edge is added.
+        """
+        tid = int(self.graph.add_task(args, func_id=int(func_id), core_type=int(core_type)))
+        if name is None:
+            # Keep names short so they fit in trace visualizations.
+            name = f"t{tid}_{secrets.token_hex(3)}"
+        self._task_names[tid] = str(name)
+
+        if reads:
+            for ptr in reads:
+                p = int(ptr)
+                if p in self._last_writer:
+                    self.graph.add_successor(int(self._last_writer[p]), tid)
+
+        if writes:
+            for ptr in writes:
+                self._last_writer[int(ptr)] = tid
+
+        return tid
+
+    def get_task_name(self, task_id: int) -> str | None:
+        return self._task_names.get(int(task_id))
+
+    def get_task_name_map(self) -> dict[int, str]:
+        # Copy for safety (callers may serialize/log it).
+        return dict(self._task_names)
+
+    def add_successor(self, from_task: int, to_task: int) -> None:
+        self.graph.add_successor(int(from_task), int(to_task))
+
+    def run(self) -> int:
+        """
+        Run the built graph via the AICPU scheduler (AI CPU).
+        """
+        return int(self.runner.run(self.graph, int(self.launch_aicpu_num)))

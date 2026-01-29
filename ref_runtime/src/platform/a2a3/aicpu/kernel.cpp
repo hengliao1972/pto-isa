@@ -273,11 +273,17 @@ extern "C" __attribute__((visibility("default"))) int DynTileFwkBackendKernelSer
         DEV_ERROR("%s", "Invalid DeviceArgs (missing opaque runtime mailbox)");
         return -1;
     }
+    // The host updates `DeviceArgs` / `PtoRuntimeArgs` between runs via H2D memcpy,
+    // but the AICPU may retain stale cache lines across kernel invocations.
+    // Ensure we observe the latest mailbox values (notably `graphArgs`) so the
+    // same host graph can be executed multiple times.
+    flush_dcache_range(reinterpret_cast<void *>(devArgs), sizeof(DeviceArgs));
     auto rtargs = reinterpret_cast<PtoRuntimeArgs *>(devArgs->opaque);
     if (rtargs == nullptr || rtargs->hankArgs == nullptr) {
         DEV_ERROR("%s", "Invalid runtime mailbox (missing hankArgs)");
         return -1;
     }
+    flush_dcache_range(reinterpret_cast<void *>(rtargs), sizeof(PtoRuntimeArgs));
 
     // Step 1: Handshake with all AICore instances
     auto rc = HankAiCore(rtargs);

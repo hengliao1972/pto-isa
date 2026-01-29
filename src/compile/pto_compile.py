@@ -630,6 +630,22 @@ class PTOModuleCompiler:
     
     def compile_function(self, program: PTOProgram) -> str:
         """Compile a single function to PTO assembly."""
+        # For InCore kernels, emit the new PTO-AS surface syntax accepted by `ptoas`.
+        #
+        # This is the preferred `.pto` format for the end-to-end toolchain:
+        #   .pto -> ptoas -> CCE C++ -> ccec -> .o/.bin -> runtime
+        #
+        # Orchestration functions are still emitted in the legacy human-readable assembly format
+        # (useful for debugging and round-tripping via `pto_parser.py`).
+        if getattr(program, "is_in_core", True):
+            from compile.pto_to_ptoas import export_program_to_ptoas
+
+            return export_program_to_ptoas(program=program)
+
+        return self._compile_function_legacy(program)
+
+    def _compile_function_legacy(self, program: PTOProgram) -> str:
+        """Compile a single function to the legacy PTO assembly format (for debugging / pto_parser.py)."""
         lines = []
         
         # Function header
@@ -697,7 +713,7 @@ class PTOModuleCompiler:
         
         # Compile each function
         for func_name, program in module.functions.items():
-            lines.append(self.compile_function(program))
+            lines.append(self._compile_function_legacy(program))
         
         return "\n".join(lines)
 
@@ -1026,4 +1042,57 @@ __all__ = [
     
     # Demo
     'run_demo', 'main_cli',
+
+    # PTO-AS (python frontend)
+    'compile_python_kernel_to_pto', 'compile_python_file_to_pto',
 ]
+
+
+def compile_python_kernel_to_pto(*, source: str, kernel: str, consts: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Compile a Python kernel (AST frontend) into PTO-AS text accepted by `ptoas`.
+
+    This is the recommended way to generate `*.pto` files in this repo.
+    """
+    try:
+        from ptoas.python import ast_frontend  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "compile_python_kernel_to_pto: missing `ptoas.python` frontend. "
+            "Ensure `ptoas/` is present in the repo root (or installed on PYTHONPATH)."
+        ) from exc
+
+    if consts is None:
+        return ast_frontend.compile_kernel_spec_from_source(source, func_name=str(kernel)).pto
+    return ast_frontend.compile_kernel_spec_from_source_with_consts(source, func_name=str(kernel), consts=dict(consts)).pto
+
+
+def compile_python_file_to_pto(
+    path: Union[str, os.PathLike[str]],
+    *,
+    kernel: Optional[str] = None,
+    consts: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Compile a Python file into PTO-AS text accepted by `ptoas`.
+
+    If `kernel` is omitted and the file defines exactly one function, that function is used.
+    """
+    from pathlib import Path
+
+    p = Path(path)
+    source = p.read_text(encoding="utf-8")
+    if kernel is None:
+        try:
+            from ptoas.python import ast_frontend  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise ImportError(
+                "compile_python_file_to_pto: missing `ptoas.python` frontend. "
+                "Ensure `ptoas/` is present in the repo root (or installed on PYTHONPATH)."
+            ) from exc
+        names = ast_frontend.list_kernel_functions(source)
+        if len(names) != 1:
+            raise ValueError(f"compile_python_file_to_pto: pass --kernel (available: {', '.join(names)})")
+        kernel = names[0]
+
+    return compile_python_kernel_to_pto(source=source, kernel=str(kernel), consts=consts)

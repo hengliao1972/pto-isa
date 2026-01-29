@@ -32,11 +32,16 @@ int execute(Graph& g, Handshake* hank, int core_num, int threadId) {
     } else {
         return 0;
     }
-    // Separate ready queues for each core type
+    // Separate ready queues for each core type.
+    //
+    // Task core_type follows graph.h:
+    //   0 = any, 1 = AIC (cube), 2 = AIV (vector)
     int ready_queue_aic[GRAPH_MAX_TASKS];
     int ready_queue_aiv[GRAPH_MAX_TASKS];
+    int ready_queue_any[GRAPH_MAX_TASKS];
     int ready_count_aic = 0;
     int ready_count_aiv = 0;
+    int ready_count_any = 0;
 
     // Get initially ready tasks and separate by core type
     int initial_ready[GRAPH_MAX_TASKS];
@@ -45,23 +50,30 @@ int execute(Graph& g, Handshake* hank, int core_num, int threadId) {
     DEV_INFO("Found %d initially ready tasks", initial_count);
     for (int i = 0; i < initial_count; i++) {
         Task* task = g.get_task(initial_ready[i]);
-        if (task->core_type == 0) {  // AIC
-            ready_queue_aic[ready_count_aic++] = initial_ready[i];
-            DEV_INFO("  Task %d -> AIC queue", initial_ready[i]);
-        } else {  // AIV
+        if (task->core_type == 2) {  // AIV
             ready_queue_aiv[ready_count_aiv++] = initial_ready[i];
             DEV_INFO("  Task %d -> AIV queue", initial_ready[i]);
+        } else if (task->core_type == 1) {  // AIC
+            ready_queue_aic[ready_count_aic++] = initial_ready[i];
+            DEV_INFO("  Task %d -> AIC queue", initial_ready[i]);
+        } else {  // any
+            ready_queue_any[ready_count_any++] = initial_ready[i];
+            DEV_INFO("  Task %d -> ANY queue", initial_ready[i]);
         }
     }
 
     int completed = 0;
     int tasks_in_flight = 0;
 
-    DEV_INFO("Starting execution loop: AIC ready=%d, AIV ready=%d", ready_count_aic, ready_count_aiv);
+    DEV_INFO(
+        "Starting execution loop: AIC ready=%d, AIV ready=%d, ANY ready=%d",
+        ready_count_aic,
+        ready_count_aiv,
+        ready_count_any);
 
     // Execute tasks using polling-based dispatch
     // Loop until all tasks are dispatched and completed
-    while (ready_count_aic > 0 || ready_count_aiv > 0 || tasks_in_flight > 0) {
+    while (ready_count_aic > 0 || ready_count_aiv > 0 || ready_count_any > 0 || tasks_in_flight > 0) {
         // Iterate through each core
         for (int core_id = 0; core_id < core_num; core_id++) {
             DEV_INFO("  Checking core %d (type=%d)", core_id, hank[core_id].core_type);
@@ -83,12 +95,15 @@ int execute(Graph& g, Handshake* hank, int core_num, int threadId) {
 
                     // Add to ready queue if ready
                     if (dep->fanin == 0) {
-                        if (dep->core_type == 0) {  // AIC
-                            ready_queue_aic[ready_count_aic++] = dep_id;
-                            DEV_INFO("    Task %d now ready -> AIC queue", dep_id);
-                        } else {  // AIV
+                        if (dep->core_type == 2) {  // AIV
                             ready_queue_aiv[ready_count_aiv++] = dep_id;
                             DEV_INFO("    Task %d now ready -> AIV queue", dep_id);
+                        } else if (dep->core_type == 1) {  // AIC
+                            ready_queue_aic[ready_count_aic++] = dep_id;
+                            DEV_INFO("    Task %d now ready -> AIC queue", dep_id);
+                        } else {  // any
+                            ready_queue_any[ready_count_any++] = dep_id;
+                            DEV_INFO("    Task %d now ready -> ANY queue", dep_id);
                         }
                     }
                 }
@@ -102,24 +117,36 @@ int execute(Graph& g, Handshake* hank, int core_num, int threadId) {
             // Case 2: Core is idle and available (idle + task is null)
             if (h->task_status == 0 && h->task == 0) {
                 // Dispatch from matching queue based on core type
-                if (h->core_type == 0 && ready_count_aic > 0) {  // AIC core
-                    int task_id = ready_queue_aic[--ready_count_aic];
-                    Task* task = g.get_task(task_id);
-
-                    DEV_INFO("  Dispatching AIC task %d to core %d", task_id, core_id);
-
-                    h->task = reinterpret_cast<uint64_t>(task);
-                    h->task_status = 1;  // Mark as busy
-                    tasks_in_flight++;
-                } else if (h->core_type == 1 && ready_count_aiv > 0) {  // AIV core
-                    int task_id = ready_queue_aiv[--ready_count_aiv];
-                    Task* task = g.get_task(task_id);
-
-                    DEV_INFO("  Dispatching AIV task %d to core %d", task_id, core_id);
-
-                    h->task = reinterpret_cast<uint64_t>(task);
-                    h->task_status = 1;  // Mark as busy
-                    tasks_in_flight++;
+                if (h->core_type == 0) {  // AIC core
+                    int task_id = -1;
+                    if (ready_count_aic > 0) {
+                        task_id = ready_queue_aic[--ready_count_aic];
+                        DEV_INFO("  Dispatching AIC task %d to core %d", task_id, core_id);
+                    } else if (ready_count_any > 0) {
+                        task_id = ready_queue_any[--ready_count_any];
+                        DEV_INFO("  Dispatching ANY task %d to AIC core %d", task_id, core_id);
+                    }
+                    if (task_id >= 0) {
+                        Task* task = g.get_task(task_id);
+                        h->task = reinterpret_cast<uint64_t>(task);
+                        h->task_status = 1;  // Mark as busy
+                        tasks_in_flight++;
+                    }
+                } else if (h->core_type == 1) {  // AIV core
+                    int task_id = -1;
+                    if (ready_count_aiv > 0) {
+                        task_id = ready_queue_aiv[--ready_count_aiv];
+                        DEV_INFO("  Dispatching AIV task %d to core %d", task_id, core_id);
+                    } else if (ready_count_any > 0) {
+                        task_id = ready_queue_any[--ready_count_any];
+                        DEV_INFO("  Dispatching ANY task %d to AIV core %d", task_id, core_id);
+                    }
+                    if (task_id >= 0) {
+                        Task* task = g.get_task(task_id);
+                        h->task = reinterpret_cast<uint64_t>(task);
+                        h->task_status = 1;  // Mark as busy
+                        tasks_in_flight++;
+                    }
                 }
             }
         }

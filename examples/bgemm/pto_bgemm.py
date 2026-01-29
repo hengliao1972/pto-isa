@@ -4,9 +4,6 @@ BGEMM example (new workflow)
 
 This example runs the **new** PTO-AS flow through the **runtime**:
   Python kernel → PTO-AS text → `ptoas` → CCE → runtime graph → NPU run + timing.
-
-For the actual implementation, see:
-  `kernels/python/bgemm_performance/`
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ def main() -> int:
     repo_root = _repo_root()
     sys.path.insert(0, os.fspath(repo_root))
 
-    from kernels.python.bgemm_performance.run_runtime import main as bgemm_main
+    from examples.bgemm.run_ascend_a2a3 import main as bgemm_main
 
     return int(bgemm_main())
 

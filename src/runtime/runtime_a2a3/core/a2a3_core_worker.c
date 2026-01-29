@@ -173,132 +173,15 @@ void a2a3_core_execute_task(PTORuntime* rt, int32_t task_id, int32_t worker_id) 
 #ifdef CANN_SDK_AVAILABLE
 
 void a2a3_core_complete_task(PTORuntime* rt, int32_t task_id) {
-    if (task_id < 0 || task_id >= rt->next_task_id) {
-        fprintf(stderr, "[A2A3 Core HW] ERROR: Invalid task_id %d\n", task_id);
-        return;
-    }
-    
-    // Hardware synchronization using CANN event system
-    pthread_mutex_lock(&rt->task_mutex);
-    
-    int32_t slot = PTO_TASK_SLOT(task_id);
-    PendingTask* task = &rt->pend_task[slot];
-    
-    task->is_complete = true;
-    rt->active_task_count--;
-    rt->total_tasks_completed++;
-    
-    // Advance sliding window
-    bool window_advanced = false;
-    while (rt->window_oldest_pending < rt->next_task_id) {
-        int32_t oldest_slot = PTO_TASK_SLOT(rt->window_oldest_pending);
-        if (!rt->pend_task[oldest_slot].is_complete) break;
-        rt->window_oldest_pending++;
-        window_advanced = true;
-    }
-    
-    DEBUG_PRINT("[A2A3 Core HW] Complete task %d: %s\n", task_id, task->func_name);
-    
-    // Collect newly ready tasks
-    int32_t newly_ready[PTO_MAX_FANOUT];
-    int32_t newly_ready_count = 0;
-    
-    for (int i = 0; i < task->fanout_count; i++) {
-        int32_t dep_id = task->fanout[i];
-        int32_t dep_slot = PTO_TASK_SLOT(dep_id);
-        PendingTask* dep_task = &rt->pend_task[dep_slot];
-        
-        dep_task->fanin--;
-        
-        if (dep_task->fanin == 0 && !dep_task->is_complete) {
-            newly_ready[newly_ready_count++] = dep_id;
-        }
-    }
-    
-    bool all_done = (rt->total_tasks_completed >= rt->total_tasks_scheduled);
-    
-    if (window_advanced) {
-        pthread_cond_broadcast(&rt->window_not_full);
-    }
-    
-    pthread_mutex_unlock(&rt->task_mutex);
-    
-    // Route newly ready tasks to appropriate queues
-    for (int i = 0; i < newly_ready_count; i++) {
-        a2a3_orch_route_to_queue_threadsafe(rt, newly_ready[i]);
-    }
-    
-    // Signal completion if all tasks done
-    if (all_done) {
-        pthread_mutex_lock(&rt->queue_mutex);
-        pthread_cond_broadcast(&rt->all_done);
-        pthread_cond_broadcast(&rt->vector_queue_not_empty);
-        pthread_cond_broadcast(&rt->cube_queue_not_empty);
-        pthread_mutex_unlock(&rt->queue_mutex);
-    }
+    // Delegate completion and dependency propagation to orchestration layer.
+    a2a3_orch_complete_task_threadsafe(rt, task_id);
 }
 
 #else /* No CANN SDK - stub implementation */
 
 void a2a3_core_complete_task(PTORuntime* rt, int32_t task_id) {
-    if (task_id < 0 || task_id >= rt->next_task_id) {
-        fprintf(stderr, "[A2A3 Core HW STUB] ERROR: Invalid task_id %d\n", task_id);
-        return;
-    }
-    
-    pthread_mutex_lock(&rt->task_mutex);
-    
-    int32_t slot = PTO_TASK_SLOT(task_id);
-    PendingTask* task = &rt->pend_task[slot];
-    
-    task->is_complete = true;
-    rt->active_task_count--;
-    rt->total_tasks_completed++;
-    
-    bool window_advanced = false;
-    while (rt->window_oldest_pending < rt->next_task_id) {
-        int32_t oldest_slot = PTO_TASK_SLOT(rt->window_oldest_pending);
-        if (!rt->pend_task[oldest_slot].is_complete) break;
-        rt->window_oldest_pending++;
-        window_advanced = true;
-    }
-    
-    DEBUG_PRINT("[A2A3 Core HW STUB] Complete task %d: %s\n", task_id, task->func_name);
-    
-    int32_t newly_ready[PTO_MAX_FANOUT];
-    int32_t newly_ready_count = 0;
-    
-    for (int i = 0; i < task->fanout_count; i++) {
-        int32_t dep_id = task->fanout[i];
-        int32_t dep_slot = PTO_TASK_SLOT(dep_id);
-        PendingTask* dep_task = &rt->pend_task[dep_slot];
-        
-        dep_task->fanin--;
-        
-        if (dep_task->fanin == 0 && !dep_task->is_complete) {
-            newly_ready[newly_ready_count++] = dep_id;
-        }
-    }
-    
-    bool all_done = (rt->total_tasks_completed >= rt->total_tasks_scheduled);
-    
-    if (window_advanced) {
-        pthread_cond_broadcast(&rt->window_not_full);
-    }
-    
-    pthread_mutex_unlock(&rt->task_mutex);
-    
-    for (int i = 0; i < newly_ready_count; i++) {
-        a2a3_orch_route_to_queue_threadsafe(rt, newly_ready[i]);
-    }
-    
-    if (all_done) {
-        pthread_mutex_lock(&rt->queue_mutex);
-        pthread_cond_broadcast(&rt->all_done);
-        pthread_cond_broadcast(&rt->vector_queue_not_empty);
-        pthread_cond_broadcast(&rt->cube_queue_not_empty);
-        pthread_mutex_unlock(&rt->queue_mutex);
-    }
+    // Delegate completion and dependency propagation to orchestration layer.
+    a2a3_orch_complete_task_threadsafe(rt, task_id);
 }
 
 #endif /* CANN_SDK_AVAILABLE */
@@ -469,85 +352,14 @@ static int32_t pop_completion_blocking(PTORuntime* rt) {
 }
 
 void a2a3_process_task_completion(PTORuntime* rt, int32_t task_id) {
-    if (task_id < 0 || task_id >= rt->next_task_id) {
-        fprintf(stderr, "[A2A3 DepResolver] ERROR: Invalid task_id %d\n", task_id);
-        return;
-    }
-    
-    pthread_mutex_lock(&rt->task_mutex);
-    
-    int32_t slot = PTO_TASK_SLOT(task_id);
-    PendingTask* task = &rt->pend_task[slot];
-    
-    // Skip if already processed
-    if (task->is_complete) {
-        pthread_mutex_unlock(&rt->task_mutex);
-        return;
-    }
-    
-    task->is_complete = true;
-    rt->active_task_count--;
-    rt->total_tasks_completed++;
-    
-    // Advance sliding window
-    bool window_advanced = false;
-    while (rt->window_oldest_pending < rt->next_task_id) {
-        int32_t oldest_slot = PTO_TASK_SLOT(rt->window_oldest_pending);
-        if (!rt->pend_task[oldest_slot].is_complete) break;
-        rt->window_oldest_pending++;
-        window_advanced = true;
-    }
-    
-    DEBUG_PRINT("[A2A3 DepResolver] Process completion: task %d (%s), %d/%d done\n", 
-                task_id, task->func_name, 
-                rt->total_tasks_completed, rt->total_tasks_scheduled);
-    
-    // Collect newly ready tasks
-    int32_t newly_ready[PTO_MAX_FANOUT];
-    int32_t newly_ready_count = 0;
-    
-    for (int i = 0; i < task->fanout_count; i++) {
-        int32_t dep_id = task->fanout[i];
-        int32_t dep_slot = PTO_TASK_SLOT(dep_id);
-        PendingTask* dep_task = &rt->pend_task[dep_slot];
-        
-        dep_task->fanin--;
-        
-        if (dep_task->fanin == 0 && !dep_task->is_complete) {
-            DEBUG_PRINT("[A2A3 DepResolver] Task %d now ready (successor of %d)\n",
-                       dep_id, task_id);
-            newly_ready[newly_ready_count++] = dep_id;
-        }
-    }
-    
-    bool all_done = (rt->total_tasks_completed >= rt->total_tasks_scheduled);
-    
-    if (window_advanced) {
-        pthread_cond_broadcast(&rt->window_not_full);
-    }
-    
-    pthread_mutex_unlock(&rt->task_mutex);
-    
-    // Route newly ready tasks to appropriate queues (outside of mutex)
-    for (int i = 0; i < newly_ready_count; i++) {
-        a2a3_orch_route_to_queue_threadsafe(rt, newly_ready[i]);
-    }
-    
-    // Signal completion if all tasks done
-    if (all_done) {
-        pthread_mutex_lock(&rt->queue_mutex);
-        pthread_cond_broadcast(&rt->all_done);
-        pthread_cond_broadcast(&rt->vector_queue_not_empty);
-        pthread_cond_broadcast(&rt->cube_queue_not_empty);
-        pthread_mutex_unlock(&rt->queue_mutex);
-        
-        // Also wake up other dep resolvers
+    // Delegate completion and dependency propagation to orchestration layer.
+    a2a3_orch_complete_task_threadsafe(rt, task_id);
+
+    // Wake up other dep resolvers on completion to allow clean shutdown.
+    if (rt->execution_started && rt->total_tasks_completed >= rt->total_tasks_scheduled) {
         pthread_mutex_lock(&g_completion_mutex);
         pthread_cond_broadcast(&g_completion_not_empty);
         pthread_mutex_unlock(&g_completion_mutex);
-        
-        DEBUG_PRINT("[A2A3 DepResolver] All %d tasks completed!\n", 
-                   rt->total_tasks_completed);
     }
 }
 

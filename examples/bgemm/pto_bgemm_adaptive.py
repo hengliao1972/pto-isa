@@ -2,7 +2,7 @@
 """
 BGEMM example (new workflow, "adaptive" runner)
 
-This is a thin wrapper around `kernels/python/bgemm_performance/run_runtime.py`.
+This is a thin wrapper around `examples/bgemm/run_ascend_a2a3.py`.
 Use `--allow-unaligned` to accept (m,n,k) that are not exact tile multiples.
 """
 
@@ -21,7 +21,7 @@ def main() -> int:
     repo_root = _repo_root()
     sys.path.insert(0, os.fspath(repo_root))
 
-    from kernels.python.bgemm_performance.run_runtime import main as bgemm_main
+    from examples.bgemm.run_ascend_a2a3 import main as bgemm_main
 
     return int(bgemm_main())
 

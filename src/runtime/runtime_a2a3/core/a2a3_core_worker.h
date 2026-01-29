@@ -114,7 +114,7 @@ void* a2a3_dep_resolver_func(void* arg);
  * 
  * This function:
  * 1. Marks the task as complete
- * 2. Decrements fanin of all successor tasks
+ * 2. Increments successors' fanin_refcount until it reaches fanin_count
  * 3. Routes newly ready tasks to appropriate queues
  * 
  * Thread-safe: can be called from multiple dep resolver threads.
