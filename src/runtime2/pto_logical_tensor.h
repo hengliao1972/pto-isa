@@ -157,6 +157,66 @@ bool pto2_tensor_entry_overlap_fast(
 );
 
 // =============================================================================
+// Hybrid Overlap Detection (Recommended)
+// =============================================================================
+
+/**
+ * Hybrid overlap detection for two logical tensors
+ * 
+ * This is the RECOMMENDED overlap detection function. It combines:
+ * - Fast bounding box check for quick rejection
+ * - Exact GCD-based check only when needed
+ * 
+ * Algorithm:
+ * 1. Different raw_base -> no overlap
+ * 2. Bounding boxes don't intersect -> no overlap
+ * 3. Both tensors are contiguous (Simple) -> bounding box result is exact
+ * 4. At least one non-contiguous (Complex) -> use GCD for exact result
+ * 
+ * This provides:
+ * - O(1) fast path for Simple vs Simple (most common case)
+ * - Exact results (no false positives) for all cases
+ * - Automatic fallback to GCD for Complex tensors
+ * 
+ * @param a First tensor
+ * @param b Second tensor
+ * @return true if tensors definitely overlap, false if definitely no overlap
+ */
+bool pto2_logical_tensor_overlap_hybrid(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+);
+
+/**
+ * Hybrid overlap detection for tensor vs tensormap entry
+ * 
+ * Same algorithm as pto2_logical_tensor_overlap_hybrid but works with
+ * TensorMapEntryEx (which stores is_simple flag).
+ * 
+ * @param tensor Logical tensor (input being looked up)
+ * @param entry  TensorMap entry (output from previous task)
+ * @return true if definitely overlap, false if definitely no overlap
+ */
+bool pto2_tensor_entry_overlap_hybrid(
+    const PTO2LogicalTensor* tensor,
+    const PTO2TensorMapEntryEx* entry
+);
+
+/**
+ * Convert TensorMapEntryEx to LogicalTensor
+ * 
+ * Used internally by hybrid detection when GCD check is needed.
+ * Reconstructs a LogicalTensor from the stored entry data.
+ * 
+ * @param entry  Source entry
+ * @param tensor Output tensor
+ */
+void pto2_entry_to_logical_tensor(
+    const PTO2TensorMapEntryEx* entry,
+    PTO2LogicalTensor* tensor
+);
+
+// =============================================================================
 // Logical Tensor Creation
 // =============================================================================
 

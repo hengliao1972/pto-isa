@@ -1878,8 +1878,21 @@ This section describes how tensor extraction operations affect memory layout and
 │                                                                              │
 │   DESIGN DECISION:                                                           │
 │   ═════════════════                                                          │
-│   Default: Bounding box overlap check (conservative, fast)                   │
-│   Optional: GCD-based exact check (configurable, for advanced use)          │
+│   HYBRID APPROACH (Implemented in runtime2):                                 │
+│                                                                              │
+│   1. Simple Tensor (is_contiguous = true):                                   │
+│      → Use Bounding Box only (O(1), exact for contiguous tensors)           │
+│                                                                              │
+│   2. Complex Tensor (is_contiguous = false):                                 │
+│      → Use Bounding Box for quick rejection                                  │
+│      → If overlap detected, verify with GCD (eliminates false positives)    │
+│                                                                              │
+│   This provides:                                                             │
+│   • O(1) fast path for the common case (contiguous tensors)                 │
+│   • 100% accuracy for all cases (no false positives)                        │
+│   • Automatic method selection based on tensor complexity                    │
+│                                                                              │
+│   API: pto2_logical_tensor_overlap_hybrid()                                 │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1968,7 +1981,7 @@ bool pto2_logical_tensor_clone(
 );
 
 // === Overlap Detection ===
-// Fast bounding box check (may have false positives)
+// Fast bounding box check (may have false positives for non-contiguous tensors)
 bool pto2_logical_tensor_overlap_fast(
     const PTO2LogicalTensor* a,
     const PTO2LogicalTensor* b
@@ -1984,6 +1997,21 @@ bool pto2_overlap_1d_exact(
 bool pto2_logical_tensor_overlap_exact(
     const PTO2LogicalTensor* a,
     const PTO2LogicalTensor* b
+);
+
+// === HYBRID OVERLAP DETECTION (RECOMMENDED) ===
+// Combines fast and exact methods automatically:
+// - Simple tensors (contiguous): O(1) bounding box, 100% accurate
+// - Complex tensors (non-contiguous): bounding box filter + GCD verification
+bool pto2_logical_tensor_overlap_hybrid(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+);
+
+// Hybrid detection for tensor vs TensorMapEntry
+bool pto2_tensor_entry_overlap_hybrid(
+    const PTO2LogicalTensor* tensor,
+    const PTO2TensorMapEntryEx* entry
 );
 
 // === Interval Tree for O(log n) Queries ===

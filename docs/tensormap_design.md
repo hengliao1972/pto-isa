@@ -455,3 +455,167 @@ int32_t producer = pto2_tensormapex_lookup(&tm, &input_B);
 // 清理
 pto2_tensormapex_destroy(&tm);
 ```
+
+---
+
+## 12. 混合重叠检测（Hybrid Overlap Detection）
+
+### 12.1 设计动机
+
+传统的重叠检测方法各有优缺点：
+
+| 方法 | 优点 | 缺点 |
+|------|------|------|
+| Bounding Box | O(1) 快速 | 对非连续 tensor 有误报 |
+| GCD 方法 | 100% 精确 | O(ndim) 较慢 |
+
+**混合方法** 结合两者优势：
+- 对 **简单 tensor** (连续) 使用 Bounding Box（快速且精确）
+- 对 **复杂 tensor** (非连续) 使用 GCD（精确无误报）
+
+### 12.2 Tensor 复杂度分类
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Tensor 复杂度分类                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Tensor                                                         │
+│     │                                                            │
+│     ├── is_contiguous = true ──> Simple Tensor                  │
+│     │     • 内存连续，无 gap                                     │
+│     │     • Bounding Box = 实际访问范围                          │
+│     │     • 检测结果：精确，无误报                                │
+│     │                                                            │
+│     └── is_contiguous = false ──> Complex Tensor                │
+│           • 内存有 gap（如 transpose、strided view）             │
+│           • Bounding Box 包含未访问区域                          │
+│           • 检测结果：可能误报，需 GCD 验证                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 12.3 混合检测算法
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    混合检测流程                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   检测 overlap(A, B)                                            │
+│     │                                                            │
+│     ├─── A.raw_base ≠ B.raw_base ──> 不重叠 (不同存储)          │
+│     │                                                            │
+│     ├─── Bounding Box 不相交 ──> 不重叠 (快速排除)               │
+│     │                                                            │
+│     ├─── A.is_simple && B.is_simple ──> 重叠确认                │
+│     │     (两者都是连续的，Bounding Box 结果精确)                │
+│     │                                                            │
+│     └─── 至少一个 Complex ──> GCD 精确检测                       │
+│           (非连续 tensor 需要验证实际是否重叠)                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 12.4 复杂度分析
+
+| Tensor A | Tensor B | 检测方法 | 时间复杂度 |
+|----------|----------|----------|------------|
+| Simple | Simple | Bounding Box | O(1) |
+| Simple | Complex | GCD | O(ndim) |
+| Complex | Simple | GCD | O(ndim) |
+| Complex | Complex | GCD | O(ndim²) |
+
+**性能优势**：
+- 大多数实际场景中 tensor 是连续的，走 O(1) 快速路径
+- 只有涉及 transpose、非连续 view 时才需要 GCD
+- Bounding Box 始终作为第一道过滤器
+
+### 12.5 API
+
+```c
+/**
+ * 混合重叠检测（推荐使用）
+ * - 自动选择最优检测方法
+ * - 返回结果 100% 精确，无误报
+ */
+bool pto2_logical_tensor_overlap_hybrid(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+);
+
+/**
+ * Tensor 与 TensorMapEntry 混合检测
+ */
+bool pto2_tensor_entry_overlap_hybrid(
+    const PTO2LogicalTensor* tensor,
+    const PTO2TensorMapEntryEx* entry
+);
+```
+
+### 12.6 数据结构支持
+
+**TensorMapEntryEx** 新增 `is_simple` 字段：
+
+```c
+typedef struct PTO2TensorMapEntryEx {
+    // ... 其他字段 ...
+    
+    bool is_deep_copy;   // 是否深拷贝
+    bool is_simple;      // 是否简单 tensor（连续）
+} PTO2TensorMapEntryEx;
+```
+
+**Insert 时记录**：
+
+```c
+void pto2_tensormapex_insert(...) {
+    // ...
+    entry->is_simple = tensor->is_contiguous;
+    // ...
+}
+```
+
+### 12.7 GCD 方法详解
+
+对于非连续 tensor，使用 GCD（最大公约数）算法精确检测重叠：
+
+**数学原理**：
+```
+Tensor A 访问的字节偏移: offset_A + i * stride_A  (0 <= i < size_A)
+Tensor B 访问的字节偏移: offset_B + j * stride_B  (0 <= j < size_B)
+
+重叠存在当且仅当存在整数 i, j 满足:
+  offset_A + i * stride_A = offset_B + j * stride_B
+
+变形: i * stride_A - j * stride_B = offset_B - offset_A = delta
+
+根据数论，整数解存在当且仅当: gcd(stride_A, stride_B) | delta
+```
+
+**示例：消除误报**
+
+```
+Tensor A: offset=0, stride=8, size=4  -> 访问 [0, 8, 16, 24]
+Tensor B: offset=4, stride=8, size=4  -> 访问 [4, 12, 20, 28]
+
+Bounding Box:
+  A: [0, 24]
+  B: [4, 28]
+  交集: [4, 24] 非空 -> 误报"重叠"
+
+GCD 检测:
+  delta = 4 - 0 = 4
+  gcd(8, 8) = 8
+  4 % 8 ≠ 0 -> 无整数解 -> 不重叠 ✓
+```
+
+### 12.8 实现状态
+
+| 功能 | 状态 |
+|------|------|
+| is_simple 字段 | ✓ 已添加到 TensorMapEntryEx |
+| hybrid 检测函数 | ✓ 已实现 |
+| TensorMap 集成 | ✓ lookup 使用 hybrid |
+| 1D GCD 检测 | ✓ 完整实现 |
+| 多维 GCD 检测 | ✓ 降维到 1D 处理 |

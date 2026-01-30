@@ -609,20 +609,9 @@ uint32_t pto2_tensormapex_hash(PTO2TensorMapEx* tm, const PTO2LogicalTensor* ten
 // -----------------------------------------------------------------------------
 
 bool pto2_tensormapex_overlap(const PTO2LogicalTensor* tensor, const PTO2TensorMapEntryEx* entry) {
-    // Different raw storage => no overlap
-    if (tensor->raw_base != entry->raw_base) {
-        return false;
-    }
-    
-    // NOTE: is_deep_copy only means the entry's storage was copied FROM another tensor.
-    // Within the same raw_base storage, we still need to check overlap.
-    // Deep copy creates a NEW independent storage, which will have a different raw_base.
-    // So if raw_base matches, we should always check overlap regardless of is_deep_copy.
-    
-    // Bounding box intersection check:
-    // Overlap if: (a.min <= b.max) AND (b.min <= a.max)
-    return (tensor->min_byte_offset <= entry->max_byte_offset) &&
-           (entry->min_byte_offset <= tensor->max_byte_offset);
+    // Use hybrid detection: fast bounding box for Simple tensors,
+    // GCD-based exact check for Complex tensors
+    return pto2_tensor_entry_overlap_hybrid(tensor, entry);
 }
 
 // -----------------------------------------------------------------------------
@@ -664,6 +653,7 @@ void pto2_tensormapex_insert(PTO2TensorMapEx* tm,
     
     entry->producer_task_id = producer_task_id;
     entry->is_deep_copy = (tensor->extraction_type >= PTO2_TENSOR_DEEP_VIEW);
+    entry->is_simple = tensor->is_contiguous;  // Record complexity for hybrid detection
     
     // Insert at head of hash bucket
     uint32_t bucket = pto2_tensormapex_hash(tm, tensor);

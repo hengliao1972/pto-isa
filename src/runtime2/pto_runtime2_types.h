@@ -342,6 +342,7 @@ typedef struct {
     
     // === Flags ===
     bool     is_deep_copy;        // True if this is a deep copy (independent storage)
+    bool     is_simple;           // True if contiguous (bounding box is exact, no GCD needed)
     
 } PTO2TensorMapEntryEx;
 

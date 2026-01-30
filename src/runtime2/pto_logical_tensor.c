@@ -325,6 +325,91 @@ bool pto2_tensor_entry_overlap_fast(
 }
 
 // =============================================================================
+// Hybrid Overlap Detection
+// =============================================================================
+
+void pto2_entry_to_logical_tensor(
+    const PTO2TensorMapEntryEx* entry,
+    PTO2LogicalTensor* tensor
+) {
+    tensor->raw_base = entry->raw_base;
+    tensor->raw_total_size = entry->raw_total_size;
+    tensor->storage_offset = entry->storage_offset;
+    tensor->min_byte_offset = entry->min_byte_offset;
+    tensor->max_byte_offset = entry->max_byte_offset;
+    tensor->ndim = entry->ndim;
+    
+    for (int32_t d = 0; d < entry->ndim && d < PTO2_MAX_TENSOR_DIM; d++) {
+        tensor->shape[d] = entry->shape[d];
+        tensor->strides[d] = entry->strides[d];
+    }
+    for (int32_t d = entry->ndim; d < PTO2_MAX_TENSOR_DIM; d++) {
+        tensor->shape[d] = 0;
+        tensor->strides[d] = 0;
+    }
+    
+    // Derive other fields
+    tensor->elem_size = (entry->ndim > 0 && entry->shape[entry->ndim - 1] > 0) 
+                        ? entry->strides[entry->ndim - 1] : 1;
+    tensor->numel = pto2_logical_tensor_numel(tensor);
+    tensor->extraction_type = entry->is_deep_copy ? PTO2_TENSOR_DEEP_VIEW : PTO2_TENSOR_VIEW;
+    tensor->is_contiguous = entry->is_simple;
+}
+
+bool pto2_logical_tensor_overlap_hybrid(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+) {
+    // 1. Different storage => no overlap
+    if (a->raw_base != b->raw_base) {
+        return false;
+    }
+    
+    // 2. Bounding box quick rejection
+    if (a->max_byte_offset < b->min_byte_offset ||
+        b->max_byte_offset < a->min_byte_offset) {
+        return false;
+    }
+    
+    // 3. Both Simple (contiguous) => bounding box is exact, no false positives
+    //    For contiguous tensors, bounding box equals actual accessed memory range
+    if (a->is_contiguous && b->is_contiguous) {
+        return true;  // Bounding box overlap = real overlap
+    }
+    
+    // 4. At least one Complex (non-contiguous) => need GCD for exact result
+    //    Complex tensors may have gaps in bounding box, causing false positives
+    return pto2_logical_tensor_overlap_exact(a, b);
+}
+
+bool pto2_tensor_entry_overlap_hybrid(
+    const PTO2LogicalTensor* tensor,
+    const PTO2TensorMapEntryEx* entry
+) {
+    // 1. Different storage => no overlap
+    if (tensor->raw_base != entry->raw_base) {
+        return false;
+    }
+    
+    // 2. Bounding box quick rejection
+    if (tensor->max_byte_offset < entry->min_byte_offset ||
+        entry->max_byte_offset < tensor->min_byte_offset) {
+        return false;
+    }
+    
+    // 3. Both Simple => bounding box is exact
+    if (tensor->is_contiguous && entry->is_simple) {
+        return true;  // Bounding box overlap = real overlap
+    }
+    
+    // 4. At least one Complex => need GCD for exact result
+    //    Convert entry to LogicalTensor and use exact check
+    PTO2LogicalTensor entry_tensor;
+    pto2_entry_to_logical_tensor(entry, &entry_tensor);
+    return pto2_logical_tensor_overlap_exact(tensor, &entry_tensor);
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 
