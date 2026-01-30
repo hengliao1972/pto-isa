@@ -141,11 +141,12 @@ void pto2_sm_reset(PTO2SharedMemoryHandle* handle);
 
 /**
  * Get task descriptor by task ID
- * Uses modulo for ring buffer indexing
+ * Uses runtime window_size for ring buffer indexing (not compile-time constant)
  */
 static inline PTO2TaskDescriptor* pto2_sm_get_task(PTO2SharedMemoryHandle* handle, 
                                                     int32_t task_id) {
-    return &handle->task_descriptors[PTO2_TASK_SLOT(task_id)];
+    int32_t window_mask = handle->header->task_window_size - 1;
+    return &handle->task_descriptors[task_id & window_mask];
 }
 
 /**

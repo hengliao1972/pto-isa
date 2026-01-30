@@ -24,18 +24,39 @@ void pto2_heap_ring_init(PTO2HeapRing* ring, void* base, int32_t size,
     ring->tail_ptr = tail_ptr;
 }
 
+// Block notification interval (in spin counts)
+#define PTO2_BLOCK_NOTIFY_INTERVAL  10000
+
 void* pto2_heap_ring_alloc(PTO2HeapRing* ring, int32_t size) {
     // Align size for DMA efficiency
     size = PTO2_ALIGN_UP(size, PTO2_ALIGN_SIZE);
     
     // Spin-wait if insufficient space (back-pressure from Scheduler)
+    int spin_count = 0;
+    bool notified = false;
+    
     while (1) {
         void* ptr = pto2_heap_ring_try_alloc(ring, size);
         if (ptr != NULL) {
+            if (notified) {
+                fprintf(stderr, "[HeapRing] Unblocked after %d spins\n", spin_count);
+            }
             return ptr;
         }
         
         // No space available, spin-wait
+        spin_count++;
+        
+        // Periodic block notification
+        if (spin_count % PTO2_BLOCK_NOTIFY_INTERVAL == 0) {
+            int32_t tail = PTO2_LOAD_ACQUIRE(ring->tail_ptr);
+            int32_t available = pto2_heap_ring_available(ring);
+            fprintf(stderr, "[HeapRing] BLOCKED: requesting %d bytes, available=%d, "
+                    "top=%d, tail=%d, spins=%d\n",
+                    size, available, ring->top, tail, spin_count);
+            notified = true;
+        }
+        
         PTO2_SPIN_PAUSE();
     }
 }
@@ -127,15 +148,32 @@ void pto2_task_ring_init(PTO2TaskRing* ring, PTO2TaskDescriptor* descriptors,
 int32_t pto2_task_ring_alloc(PTO2TaskRing* ring) {
     // Spin-wait if window is full (back-pressure from Scheduler)
     int spin_count = 0;
+    bool notified = false;
     
     while (1) {
         int32_t task_id = pto2_task_ring_try_alloc(ring);
         if (task_id >= 0) {
+            if (notified) {
+                fprintf(stderr, "[TaskRing] Unblocked after %d spins, task_id=%d\n", 
+                        spin_count, task_id);
+            }
             return task_id;
         }
         
         // Window is full, spin-wait (with yield to prevent CPU starvation)
         spin_count++;
+        
+        // Periodic block notification
+        if (spin_count % PTO2_BLOCK_NOTIFY_INTERVAL == 0 && 
+            spin_count < PTO2_FLOW_CONTROL_SPIN_LIMIT) {
+            int32_t last_alive = PTO2_LOAD_ACQUIRE(ring->last_alive_ptr);
+            int32_t active_count = ring->current_index - last_alive;
+            fprintf(stderr, "[TaskRing] BLOCKED (Flow Control): current=%d, last_alive=%d, "
+                    "active=%d/%d (%.1f%%), spins=%d\n",
+                    ring->current_index, last_alive, active_count, ring->window_size,
+                    100.0 * active_count / ring->window_size, spin_count);
+            notified = true;
+        }
         
         // Check for potential deadlock
         if (spin_count >= PTO2_FLOW_CONTROL_SPIN_LIMIT) {
@@ -165,13 +203,14 @@ int32_t pto2_task_ring_alloc(PTO2TaskRing* ring) {
             fprintf(stderr, "  This creates a circular dependency (deadlock).\n");
             fprintf(stderr, "\n");
             fprintf(stderr, "Solution:\n");
-            fprintf(stderr, "  Increase PTO2_TASK_WINDOW_SIZE in pto_runtime2_types.h\n");
-            fprintf(stderr, "  Current value: %d\n", ring->window_size);
-            fprintf(stderr, "  Recommended:   %d (at least 2x current active tasks)\n", 
+            fprintf(stderr, "  Current task_window_size: %d\n", ring->window_size);
+            fprintf(stderr, "  Default PTO2_TASK_WINDOW_SIZE: %d\n", PTO2_TASK_WINDOW_SIZE);
+            fprintf(stderr, "  Recommended: %d (at least 2x current active tasks)\n", 
                     active_count * 2);
             fprintf(stderr, "\n");
-            fprintf(stderr, "  Or use pto2_runtime_create_threaded_custom() with larger\n");
-            fprintf(stderr, "  task_window_size parameter.\n");
+            fprintf(stderr, "  Option 1: Change PTO2_TASK_WINDOW_SIZE in pto_runtime2_types.h\n");
+            fprintf(stderr, "  Option 2: Use pto2_runtime_create_threaded_custom() with larger\n");
+            fprintf(stderr, "            task_window_size parameter.\n");
             fprintf(stderr, "========================================\n");
             fprintf(stderr, "\n");
             

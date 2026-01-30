@@ -96,11 +96,13 @@ int64_t get_incore_cycle_cost_sim(const char* func_name, int64_t tile_size) {
 //   [0] A (float*)
 //   [1] B (float*)
 //   [2] C (float*)
-//   [3] P (float*)
-//   [4] b (int32_t)
-//   [5] m (int32_t)
-//   [6] k (int32_t)
-//   [7] n (int32_t)
+//   [3] b (int32_t)
+//   [4] m (int32_t)
+//   [5] k (int32_t)
+//   [6] n (int32_t)
+//
+// Intermediate buffers (Mode B - runtime allocated):
+//   P: 16384 bytes (allocated by runtime)
 // =============================================================================
 
 void bgemm_dynamic(PTORuntime* rt, void* user_data) {
@@ -111,11 +113,17 @@ void bgemm_dynamic(PTORuntime* rt, void* user_data) {
     float* A = (float*)params[0];
     float* B = (float*)params[1];
     float* C = (float*)params[2];
-    float* P = (float*)params[3];
-    int32_t b = *(int32_t*)params[4];
-    int32_t m = *(int32_t*)params[5];
-    int32_t k = *(int32_t*)params[6];
-    int32_t n = *(int32_t*)params[7];
+    int32_t b = *(int32_t*)params[3];
+    int32_t m = *(int32_t*)params[4];
+    int32_t k = *(int32_t*)params[5];
+    int32_t n = *(int32_t*)params[6];
+
+    // Intermediate buffers (Mode B: runtime-allocated)
+    // These variables receive allocated addresses from runtime during task submission
+    void* P = NULL;  // Size: 16384 bytes
+
+    // Root scope for buffer lifetime management
+    pto_scope_begin(rt);
 
     int32_t _task_id = 0;
 
@@ -130,7 +138,7 @@ void bgemm_dynamic(PTORuntime* rt, void* user_data) {
                                 int32_t t = pto_task_alloc(rt, "gemm_tile", NULL, 0, 0, true);
                                 pto_task_add_input(rt, t, A, batch * (m * k) + (sm + lm) * k + k_idx, 0, 32, 128);
                                 pto_task_add_input(rt, t, B, batch * (k * n) + k_idx * n + (sn + ln), 0, 32, 128);
-                                pto_task_add_output(rt, t, P, batch * (m * n) + (sm + lm) * n + (sn + ln), 0, 32, 128);
+                                pto_task_add_output_ref(rt, t, &P, 0, 0, 32, 128);
                                 // Cycle cost: 10 (heuristic), use core sim for accurate timing
                                 pto_task_submit(rt, t);
                             }
@@ -139,7 +147,7 @@ void bgemm_dynamic(PTORuntime* rt, void* user_data) {
                             {
                                 int32_t t = pto_task_alloc(rt, "tile_add", NULL, 0, 0, false);
                                 pto_task_add_input(rt, t, C, batch * (m * n) + (sm + lm) * n + (sn + ln), 0, 32, 128);
-                                pto_task_add_input(rt, t, P, batch * (m * n) + (sm + lm) * n + (sn + ln), 0, 32, 128);
+                                pto_task_add_input(rt, t, P, 0, 0, 32, 128);
                                 pto_task_add_output(rt, t, C, batch * (m * n) + (sm + lm) * n + (sn + ln), 0, 32, 128);
                                 // Cycle cost: 10 (heuristic), use core sim for accurate timing
                                 pto_task_submit(rt, t);
@@ -151,6 +159,9 @@ void bgemm_dynamic(PTORuntime* rt, void* user_data) {
             }
         }
     }
+    __pto_orch_epilogue:;
+    pto_scope_end(rt);
+    return;
 }
 
 // =============================================================================
@@ -206,7 +217,6 @@ int main(int argc, char** argv) {
     float* A = (float*)calloc(1024 * 1024, sizeof(float));
     float* B = (float*)calloc(1024 * 1024, sizeof(float));
     float* C = (float*)calloc(1024 * 1024, sizeof(float));
-    float* P = (float*)calloc(1024 * 1024, sizeof(float));
     int32_t b = 16;  // Default
     int32_t m = 16;  // Default
     int32_t k = 16;  // Default
@@ -219,15 +229,14 @@ int main(int argc, char** argv) {
     if (argc > 4 + arg_offset) n = atoi(argv[4 + arg_offset]);
 
     // Set up parameter array (void** for orchestration function)
-    void* user_data[8];
+    void* user_data[7];
     user_data[0] = (void*)A;
     user_data[1] = (void*)B;
     user_data[2] = (void*)C;
-    user_data[3] = (void*)P;
-    user_data[4] = (void*)&b;
-    user_data[5] = (void*)&m;
-    user_data[6] = (void*)&k;
-    user_data[7] = (void*)&n;
+    user_data[3] = (void*)&b;
+    user_data[4] = (void*)&m;
+    user_data[5] = (void*)&k;
+    user_data[6] = (void*)&n;
 
     // Print configuration
     if (!benchmark_only) {
@@ -235,6 +244,10 @@ int main(int argc, char** argv) {
         printf("  b = %d\n", b);
         printf("\nPhase 1: Building task graph...\n");
     }
+    
+    // Set runtime mode to SIMULATE for flow control testing
+    // This enables blocking wait when ring buffers are full
+    pto_runtime_set_mode(rt, PTO_MODE_SIMULATE);
     
     // === BENCHMARK: Measure orchestration time ===
     struct timespec start_time, end_time;
@@ -273,6 +286,12 @@ int main(int argc, char** argv) {
         // Print cycle trace summary
         pto_trace_print_summary();
         
+        // Print flow control statistics
+        pto_print_flow_stats(rt);
+        
+        // Print flow control statistics
+        pto_print_flow_stats(rt);
+        
         // Save trace to JSON for visualization
         const char* trace_file = getenv("PTO_TRACE_OUTPUT");
         if (!trace_file) {
@@ -292,7 +311,6 @@ int main(int argc, char** argv) {
     free(A);
     free(B);
     free(C);
-    free(P);
     
     if (!benchmark_only) {
         printf("\n=== Simulation Complete ===\n");

@@ -1398,6 +1398,730 @@ TensorMap Pool Size Calculation:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
+#### Tensor Extraction Operations and Memory Layout
+
+This section describes how tensor extraction operations affect memory layout and dependency checking in the TensorMap.
+
+##### Raw Tensor vs Logical Tensor
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    RAW TENSOR vs LOGICAL TENSOR                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   RAW TENSOR (Storage):                                                      │
+│   ════════════════════                                                       │
+│   - Provides the actual contiguous memory allocation                         │
+│   - Described by: base_ptr, total_size                                       │
+│   - Single owner, may be shared by multiple logical tensors                  │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │ base_ptr                                            total_size  │       │
+│   │ ▼                                                             ▼ │       │
+│   │ ┌───────────────────────────────────────────────────────────┐   │       │
+│   │ │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│   │       │
+│   │ └───────────────────────────────────────────────────────────┘   │       │
+│   │   Raw storage: contiguous bytes in memory                       │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│   LOGICAL TENSOR (View):                                                     │
+│   ══════════════════════                                                     │
+│   - A "window" into the raw tensor with specific layout                      │
+│   - Described by: raw_tensor_ptr, offset, shape[], strides[]                 │
+│   - Multiple logical tensors can share the same raw tensor                   │
+│                                                                              │
+│   struct LogicalTensor {                                                     │
+│       void*    raw_base;        // Pointer to raw tensor's base              │
+│       int64_t  storage_offset;  // Byte offset from raw_base                 │
+│       int64_t  shape[MAX_DIM];  // Size in each dimension                    │
+│       int64_t  strides[MAX_DIM];// Byte stride in each dimension             │
+│       int      ndim;            // Number of dimensions                      │
+│   };                                                                         │
+│                                                                              │
+│   Example: 2D tensor (3x4) with row-major layout                             │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │                                                                   │       │
+│   │   shape = [3, 4]                                                  │       │
+│   │   strides = [4*sizeof(float), sizeof(float)] = [16, 4]           │       │
+│   │                                                                   │       │
+│   │   Memory layout:                                                  │       │
+│   │   ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐              │       │
+│   │   │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │10 │11 │              │       │
+│   │   └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘              │       │
+│   │   ├───────────────┤ row 0 (stride[0]=16 bytes to next row)       │       │
+│   │       ├───┤ element stride[1]=4 bytes                            │       │
+│   │                                                                   │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Primary Extraction Operations
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TENSOR EXTRACTION OPERATIONS                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Three primary operations create new logical tensors that SHARE storage    │
+│   with the original raw tensor (shallow copy / aliasing):                    │
+│                                                                              │
+│   1. VIEW (Slicing/Indexing)                                                 │
+│   ══════════════════════════                                                 │
+│   Creates a sub-tensor by selecting a subset of elements.                    │
+│   Changes: offset, shape (strides typically unchanged)                       │
+│                                                                              │
+│   Original A (4x4):           View B = A[1:3, 1:3] (2x2):                    │
+│   ┌───┬───┬───┬───┐          ┌───┬───┐                                      │
+│   │ 0 │ 1 │ 2 │ 3 │          │ 5 │ 6 │  offset = 1*stride[0] + 1*stride[1] │
+│   ├───┼───┼───┼───┤          ├───┼───┤  shape = [2, 2]                      │
+│   │ 4 │[5]│[6]│ 7 │    →     │ 9 │10 │  strides = same as A                 │
+│   ├───┼───┼───┼───┤          └───┴───┘                                      │
+│   │ 8 │[9]│[10]│11│                                                         │
+│   ├───┼───┼───┼───┤                                                         │
+│   │12 │13 │14 │15 │                                                         │
+│   └───┴───┴───┴───┘                                                         │
+│                                                                              │
+│   2. RESHAPE                                                                 │
+│   ══════════════                                                             │
+│   Changes the logical shape without moving data.                             │
+│   Requirement: tensor must be contiguous (no gaps).                          │
+│   Changes: shape, strides (recomputed for new shape)                         │
+│                                                                              │
+│   Original A (2x6):           Reshape B = A.reshape(3, 4):                   │
+│   ┌───┬───┬───┬───┬───┬───┐  ┌───┬───┬───┬───┐                              │
+│   │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │  │ 0 │ 1 │ 2 │ 3 │  Same memory,               │
+│   ├───┼───┼───┼───┼───┼───┤  ├───┼───┼───┼───┤  different interpretation    │
+│   │ 6 │ 7 │ 8 │ 9 │10 │11 │  │ 4 │ 5 │ 6 │ 7 │                              │
+│   └───┴───┴───┴───┴───┴───┘  ├───┼───┼───┼───┤                              │
+│                               │ 8 │ 9 │10 │11 │                              │
+│                               └───┴───┴───┴───┘                              │
+│                                                                              │
+│   3. TRANSPOSE (Permute)                                                     │
+│   ══════════════════════                                                     │
+│   Reorders dimensions without moving data.                                   │
+│   Changes: shape (reordered), strides (reordered)                            │
+│                                                                              │
+│   Original A (2x3):           Transpose B = A.T (3x2):                       │
+│   shape=[2,3], strides=[12,4] shape=[3,2], strides=[4,12]                   │
+│                                                                              │
+│   Logical view A:             Logical view B:                                │
+│   ┌───┬───┬───┐               ┌───┬───┐                                     │
+│   │ 0 │ 1 │ 2 │               │ 0 │ 3 │  Same memory!                       │
+│   ├───┼───┼───┤               ├───┼───┤  B[i,j] = A[j,i]                    │
+│   │ 3 │ 4 │ 5 │               │ 1 │ 4 │  via stride swap                    │
+│   └───┴───┴───┘               ├───┼───┤                                     │
+│                               │ 2 │ 5 │                                     │
+│   Memory: [0,1,2,3,4,5]       └───┴───┘                                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Shallow vs Deep Extraction
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    SHALLOW vs DEEP EXTRACTION                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   SHALLOW EXTRACTION (Aliasing):                                             │
+│   ══════════════════════════════                                             │
+│   - view(), reshape(), transpose()                                           │
+│   - Creates a new logical tensor that SHARES the raw tensor                  │
+│   - No data copy, O(1) operation                                             │
+│   - Any write through one view affects all other views                       │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │  Raw Tensor (shared storage)                                     │       │
+│   │  ┌─────────────────────────────────────────────────────────┐    │       │
+│   │  │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│    │       │
+│   │  └─────────────────────────────────────────────────────────┘    │       │
+│   │       ▲              ▲              ▲                           │       │
+│   │       │              │              │                           │       │
+│   │  ┌────┴────┐    ┌────┴────┐    ┌────┴────┐                     │       │
+│   │  │ View A  │    │ View B  │    │ View C  │                     │       │
+│   │  │(original)│   │(slice)  │    │(transpose)                    │       │
+│   │  └─────────┘    └─────────┘    └─────────┘                     │       │
+│   │                                                                  │       │
+│   │  All views ALIAS the same memory!                               │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│   DEEP EXTRACTION (Copy):                                                    │
+│   ═══════════════════════                                                    │
+│   - deep_view(), deep_reshape(), deep_transpose(), clone(), contiguous()    │
+│   - Allocates a NEW raw tensor                                               │
+│   - Copies data from source to new tensor                                    │
+│   - Independent of original - writes don't affect other views               │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │  Original Raw Tensor              New Raw Tensor (deep copy)    │       │
+│   │  ┌───────────────────────┐       ┌───────────────────────┐     │       │
+│   │  │░░░░░░░░░░░░░░░░░░░░░░│       │████████████████████████│     │       │
+│   │  └───────────────────────┘       └───────────────────────┘     │       │
+│   │       ▲                               ▲                         │       │
+│   │       │           COPY                │                         │       │
+│   │  ┌────┴────┐    ─────────────►  ┌────┴────┐                    │       │
+│   │  │ View A  │                    │ Deep B  │                    │       │
+│   │  │(original)│                   │(independent)                 │       │
+│   │  └─────────┘                    └─────────┘                    │       │
+│   │                                                                  │       │
+│   │  Deep copy has its own storage - no aliasing                    │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│   WHEN TO USE DEEP COPY:                                                     │
+│   - When you need to modify data without affecting original                  │
+│   - When transposed/strided tensor needs contiguous memory for kernels      │
+│   - When aliasing would create false dependencies                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### TensorMap Design for Extracted Tensors
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TENSORMAP DESIGN FOR EXTRACTED TENSORS                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   CHALLENGE:                                                                 │
+│   ═══════════                                                                │
+│   TensorMap must track dependencies for tensors that may:                    │
+│   - Share the same raw storage (shallow extractions)                         │
+│   - Have complex, non-contiguous memory access patterns                      │
+│   - Overlap partially (not just exact matches)                               │
+│                                                                              │
+│   TENSORMAP ENTRY STRUCTURE (Extended):                                      │
+│   ═══════════════════════════════════════                                    │
+│                                                                              │
+│   struct TensorMapEntry {                                                    │
+│       // Raw tensor identification                                           │
+│       void*    raw_base_ptr;      // Base of raw tensor (for grouping)      │
+│       int64_t  raw_total_size;    // Total size of raw tensor               │
+│                                                                              │
+│       // Logical tensor layout (for overlap detection)                       │
+│       int64_t  storage_offset;    // Byte offset from raw_base              │
+│       int64_t  shape[MAX_DIM];    // Shape in each dimension                │
+│       int64_t  strides[MAX_DIM];  // Strides in each dimension              │
+│       int      ndim;              // Number of dimensions                   │
+│                                                                              │
+│       // Bounding box (precomputed for fast overlap check)                  │
+│       int64_t  min_byte_offset;   // First byte accessed                    │
+│       int64_t  max_byte_offset;   // Last byte accessed                     │
+│                                                                              │
+│       // Producer tracking                                                   │
+│       int32_t  producer_task_id;  // Task that produced this tensor         │
+│       int32_t  next_in_bucket;    // Hash chain                             │
+│       bool     is_deep_copy;      // True if this is a deep copy            │
+│   };                                                                         │
+│                                                                              │
+│   HASH STRATEGY:                                                             │
+│   ══════════════                                                             │
+│   Primary key: raw_base_ptr (groups all views of same storage)              │
+│   Within bucket: linear scan checking bounding box overlap                   │
+│                                                                              │
+│   hash(tensor) = hash(tensor.raw_base_ptr) % NUM_BUCKETS                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Memory Overlap Detection Algorithm
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    MEMORY OVERLAP DETECTION                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   PROBLEM:                                                                   │
+│   ═════════                                                                  │
+│   Given two tensors A and B (potentially with complex strides from          │
+│   view/reshape/transpose), determine if they access overlapping memory.     │
+│                                                                              │
+│   ALGORITHM 1: BOUNDING BOX (Fast, may have false positives)                │
+│   ════════════════════════════════════════════════════════════              │
+│                                                                              │
+│   Step 1: Check if same raw storage                                         │
+│   ─────────────────────────────────                                         │
+│   if (A.raw_base_ptr != B.raw_base_ptr) {                                   │
+│       return NO_OVERLAP;  // Different storage, definitely no overlap       │
+│   }                                                                          │
+│                                                                              │
+│   Step 2: Calculate bounding box for each tensor                            │
+│   ──────────────────────────────────────────────                            │
+│   For a tensor T with shape[d] and strides[d]:                              │
+│                                                                              │
+│   min_offset = storage_offset                                                │
+│   max_offset = storage_offset                                                │
+│   for d in 0..ndim:                                                          │
+│       if strides[d] > 0:                                                     │
+│           max_offset += (shape[d] - 1) * strides[d]                         │
+│       else:  // negative stride (flipped dimension)                         │
+│           min_offset += (shape[d] - 1) * strides[d]                         │
+│                                                                              │
+│   Step 3: Check bounding box intersection                                   │
+│   ───────────────────────────────────────                                   │
+│   overlap = (A.min_offset <= B.max_offset) && (B.min_offset <= A.max_offset)│
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────┐       │
+│   │  Memory range visualization:                                     │       │
+│   │                                                                   │       │
+│   │  Tensor A: [min_A ████████████████████ max_A]                   │       │
+│   │  Tensor B:           [min_B ████████████████████ max_B]         │       │
+│   │                           ↑               ↑                      │       │
+│   │                           └───────────────┘                      │       │
+│   │                           Bounding boxes overlap                 │       │
+│   │                                                                   │       │
+│   └─────────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+│   IMPLEMENTATION (Pseudocode):                                               │
+│   ═════════════════════════════                                              │
+│                                                                              │
+│   ```python                                                                  │
+│   def get_bounding_box(tensor):                                             │
+│       """Calculate min and max byte offset for tensor's memory footprint""" │
+│       min_offset = tensor.storage_offset                                     │
+│       max_offset = tensor.storage_offset                                     │
+│                                                                              │
+│       for dim in range(tensor.ndim):                                        │
+│           extent = (tensor.shape[dim] - 1) * tensor.strides[dim]            │
+│           if tensor.strides[dim] > 0:                                       │
+│               max_offset += extent                                           │
+│           else:                                                              │
+│               min_offset += extent  # extent is negative                    │
+│                                                                              │
+│       return (min_offset, max_offset)                                        │
+│                                                                              │
+│   def check_overlap_fast(A, B):                                             │
+│       """Fast bounding box overlap check (may have false positives)"""      │
+│       # Different storage => no overlap                                      │
+│       if A.raw_base_ptr != B.raw_base_ptr:                                  │
+│           return False                                                       │
+│                                                                              │
+│       # Get bounding boxes                                                   │
+│       min_A, max_A = get_bounding_box(A)                                    │
+│       min_B, max_B = get_bounding_box(B)                                    │
+│                                                                              │
+│       # Check interval intersection                                          │
+│       return (min_A <= max_B) and (min_B <= max_A)                          │
+│   ```                                                                        │
+│                                                                              │
+│   FALSE POSITIVE EXAMPLE:                                                    │
+│   ═══════════════════════                                                    │
+│   Strided tensors may have bounding box overlap but not actual overlap:     │
+│                                                                              │
+│   A: elements at bytes [0, 8, 16, 24]  (stride=8, shape=4)                  │
+│   B: elements at bytes [4, 12, 20, 28] (stride=8, shape=4, offset=4)        │
+│                                                                              │
+│   Bounding boxes: A=[0,24], B=[4,28] → OVERLAP (false positive!)            │
+│   Actual bytes:   A touches {0,8,16,24}, B touches {4,12,20,28}             │
+│   No actual overlap! They interleave.                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│   ALGORITHM 2: GCD-BASED EXACT CHECK (Slower, no false positives)           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   For 100% accuracy with strided tensors, check if the integer lattices     │
+│   defined by the strides ever intersect.                                     │
+│                                                                              │
+│   MATHEMATICAL FORMULATION:                                                  │
+│   ════════════════════════                                                   │
+│   Tensor A touches byte offset: offset_A + Σ(i_d * stride_A[d])             │
+│   Tensor B touches byte offset: offset_B + Σ(j_d * stride_B[d])             │
+│   where 0 <= i_d < shape_A[d], 0 <= j_d < shape_B[d]                        │
+│                                                                              │
+│   Overlap exists iff there exist valid indices (i, j) such that:            │
+│   offset_A + Σ(i_d * stride_A[d]) = offset_B + Σ(j_d * stride_B[d])         │
+│                                                                              │
+│   This is a Diophantine equation solvable via GCD analysis.                  │
+│                                                                              │
+│   1D CASE:                                                                   │
+│   ─────────                                                                  │
+│   A: offset_A, stride_A, size_A                                              │
+│   B: offset_B, stride_B, size_B                                              │
+│                                                                              │
+│   Overlap iff exists integers i, j where:                                    │
+│   - 0 <= i < size_A                                                          │
+│   - 0 <= j < size_B                                                          │
+│   - offset_A + i*stride_A = offset_B + j*stride_B                           │
+│                                                                              │
+│   Rearranging: i*stride_A - j*stride_B = offset_B - offset_A                │
+│                                                                              │
+│   Solution exists iff: gcd(stride_A, stride_B) divides (offset_B - offset_A)│
+│   Then check if solution falls within valid index ranges.                    │
+│                                                                              │
+│   ```python                                                                  │
+│   def check_overlap_exact_1d(A, B):                                         │
+│       """Exact 1D overlap check using GCD"""                                │
+│       if A.raw_base_ptr != B.raw_base_ptr:                                  │
+│           return False                                                       │
+│                                                                              │
+│       delta = B.storage_offset - A.storage_offset                            │
+│       g = gcd(A.stride, B.stride)                                           │
+│                                                                              │
+│       # No solution if delta not divisible by gcd                            │
+│       if delta % g != 0:                                                     │
+│           return False                                                       │
+│                                                                              │
+│       # Find one solution using extended Euclidean algorithm                │
+│       # Then check if any solution falls in valid range                      │
+│       # (Implementation details omitted for brevity)                         │
+│       ...                                                                    │
+│   ```                                                                        │
+│                                                                              │
+│   MULTI-DIMENSIONAL CASE:                                                    │
+│   ═══════════════════════                                                    │
+│   For N-dimensional tensors, the problem becomes significantly harder.       │
+│   Practical approach: flatten to 1D using combined stride/shape info.        │
+│                                                                              │
+│   RECOMMENDATION:                                                            │
+│   ════════════════                                                           │
+│   - Use BOUNDING BOX for most cases (fast, conservative)                    │
+│   - False positives create unnecessary dependencies (safe, but less parallel)│
+│   - Use GCD only if false positives significantly hurt performance          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### TensorMap Lookup with Overlap Detection
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TENSORMAP LOOKUP WITH OVERLAP                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   When a task declares an INPUT tensor, TensorMap must find ALL producers   │
+│   whose outputs OVERLAP with this input (not just exact matches).           │
+│                                                                              │
+│   LOOKUP ALGORITHM:                                                          │
+│   ═══════════════════                                                        │
+│                                                                              │
+│   ```c                                                                       │
+│   // Find all producers that overlap with the input tensor                   │
+│   int tensormap_find_overlapping_producers(                                  │
+│       TensorMap* tm,                                                         │
+│       LogicalTensor* input,                                                  │
+│       int32_t* producer_ids,    // output: array of producer task IDs       │
+│       int max_producers         // max size of output array                  │
+│   ) {                                                                        │
+│       int count = 0;                                                         │
+│                                                                              │
+│       // Hash by raw_base_ptr to find candidate bucket                       │
+│       uint32_t bucket = hash(input->raw_base_ptr) % tm->num_buckets;        │
+│                                                                              │
+│       // Scan bucket for overlapping entries                                 │
+│       int32_t entry_idx = tm->buckets[bucket];                              │
+│       while (entry_idx >= 0 && count < max_producers) {                     │
+│           TensorMapEntry* entry = &tm->entry_pool[entry_idx];               │
+│                                                                              │
+│           // Skip stale entries                                              │
+│           if (entry->producer_task_id < tm->last_task_alive) {              │
+│               entry_idx = entry->next_in_bucket;                            │
+│               continue;                                                      │
+│           }                                                                  │
+│                                                                              │
+│           // Check overlap (using bounding box or GCD method)               │
+│           if (check_overlap(input, entry)) {                                │
+│               producer_ids[count++] = entry->producer_task_id;              │
+│           }                                                                  │
+│                                                                              │
+│           entry_idx = entry->next_in_bucket;                                │
+│       }                                                                      │
+│                                                                              │
+│       return count;                                                          │
+│   }                                                                          │
+│   ```                                                                        │
+│                                                                              │
+│   COMPLEXITY ANALYSIS:                                                       │
+│   ═════════════════════                                                      │
+│   - Hash lookup: O(1)                                                        │
+│   - Bucket scan: O(k) where k = entries with same raw_base_ptr             │
+│   - Overlap check per entry: O(ndim) for bounding box, O(ndim²) for GCD    │
+│   - Total: O(k * ndim) typical case                                         │
+│                                                                              │
+│   OPTIMIZATION: INTERVAL TREE                                                │
+│   ════════════════════════════                                               │
+│   For tensors with many views of same storage, use interval tree:           │
+│   - Build tree on (min_offset, max_offset) intervals                        │
+│   - Query: O(log n + m) where m = overlapping intervals                     │
+│   - Useful when many slices of large tensor                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Summary: Tensor Extraction Impact on TensorMap
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    SUMMARY: EXTRACTION OPERATIONS IMPACT                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Operation     │ Storage │ Offset  │ Shape   │ Strides │ TensorMap Impact │
+│   ══════════════╪═════════╪═════════╪═════════╪═════════╪══════════════════│
+│   view/slice    │ shared  │ changed │ changed │ same    │ may overlap      │
+│   reshape       │ shared  │ same    │ changed │ changed │ same region      │
+│   transpose     │ shared  │ same    │ swapped │ swapped │ same region      │
+│   deep_view     │ new     │ 0       │ changed │ compact │ independent      │
+│   deep_reshape  │ new     │ 0       │ changed │ compact │ independent      │
+│   deep_transpose│ new     │ 0       │ swapped │ compact │ independent      │
+│   clone         │ new     │ 0       │ same    │ compact │ independent      │
+│                                                                              │
+│   KEY INSIGHTS:                                                              │
+│   ══════════════                                                             │
+│   1. Shallow ops (view/reshape/transpose) create ALIASES → need overlap check│
+│   2. Deep ops create INDEPENDENT tensors → no overlap with original         │
+│   3. TensorMap must handle both exact matches AND partial overlaps          │
+│   4. Bounding box is fast but conservative (safe for correctness)           │
+│   5. GCD method is exact but slower (for performance-critical paths)        │
+│                                                                              │
+│   DESIGN DECISION:                                                           │
+│   ═════════════════                                                          │
+│   Default: Bounding box overlap check (conservative, fast)                   │
+│   Optional: GCD-based exact check (configurable, for advanced use)          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Implementation: Logical Tensor API (runtime2)
+
+The following APIs are implemented in `pto_logical_tensor.h` and `pto_logical_tensor.c`:
+
+**Data Structures:**
+
+```c
+// Maximum dimensions supported
+#define PTO2_MAX_TENSOR_DIM   8
+
+// Extraction type enumeration
+typedef enum {
+    PTO2_TENSOR_RAW = 0,           // Original raw tensor (owns storage)
+    PTO2_TENSOR_VIEW = 1,          // view() - subset selection, shared storage
+    PTO2_TENSOR_RESHAPE = 2,       // reshape() - shape change, shared storage
+    PTO2_TENSOR_TRANSPOSE = 3,     // transpose() - dimension permute, shared storage
+    PTO2_TENSOR_DEEP_VIEW = 4,     // deep_view() - copied subset, new storage
+    PTO2_TENSOR_DEEP_RESHAPE = 5,  // deep_reshape() - copied reshape, new storage
+    PTO2_TENSOR_DEEP_TRANSPOSE = 6 // deep_transpose() - copied transpose, new storage
+} PTO2TensorExtractionType;
+
+// Logical tensor structure
+typedef struct {
+    void*    raw_base;            // Pointer to raw tensor's base
+    int64_t  raw_total_size;      // Total size of raw tensor in bytes
+    int64_t  storage_offset;      // Byte offset from raw_base to first element
+    int64_t  shape[PTO2_MAX_TENSOR_DIM];    // Size in each dimension
+    int64_t  strides[PTO2_MAX_TENSOR_DIM];  // Byte stride in each dimension
+    int32_t  ndim;                          // Number of dimensions
+    int64_t  min_byte_offset;     // Bounding box: first byte accessed
+    int64_t  max_byte_offset;     // Bounding box: last byte accessed
+    int64_t  elem_size;           // Size of each element in bytes
+    int64_t  numel;               // Total number of elements
+    PTO2TensorExtractionType extraction_type;
+    bool     is_contiguous;       // True if memory is contiguous
+} PTO2LogicalTensor;
+```
+
+**Core APIs:**
+
+```c
+// === Tensor Creation ===
+// Create a raw contiguous tensor (row-major layout)
+void pto2_logical_tensor_init_raw(
+    PTO2LogicalTensor* tensor,
+    void* base_ptr,
+    const int64_t* shape,
+    int32_t ndim,
+    int64_t elem_size
+);
+
+// === Shallow Extraction (share storage) ===
+// Create a view (slice) - select subset of elements
+bool pto2_logical_tensor_view(
+    const PTO2LogicalTensor* src,
+    PTO2LogicalTensor* dst,
+    const int64_t* start,     // Start index in each dimension
+    const int64_t* shape,     // Shape of the view
+    int32_t ndim
+);
+
+// Reshape - change logical shape (requires contiguous tensor)
+bool pto2_logical_tensor_reshape(
+    const PTO2LogicalTensor* src,
+    PTO2LogicalTensor* dst,
+    const int64_t* shape,
+    int32_t ndim
+);
+
+// Transpose - permute dimensions
+bool pto2_logical_tensor_transpose(
+    const PTO2LogicalTensor* src,
+    PTO2LogicalTensor* dst,
+    const int32_t* perm       // NULL = reverse all dimensions
+);
+
+// === Deep Extraction (copy to new storage) ===
+bool pto2_logical_tensor_clone(
+    const PTO2LogicalTensor* src,
+    PTO2LogicalTensor* dst,
+    void* new_base            // Pre-allocated buffer
+);
+
+// === Overlap Detection ===
+// Fast bounding box check (may have false positives)
+bool pto2_logical_tensor_overlap_fast(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+);
+
+// Exact GCD-based check for 1D tensors (no false positives)
+bool pto2_overlap_1d_exact(
+    int64_t offset_a, int64_t stride_a, int64_t size_a,
+    int64_t offset_b, int64_t stride_b, int64_t size_b
+);
+
+// Exact check for logical tensors (uses GCD for 1D, fallback for multi-dim)
+bool pto2_logical_tensor_overlap_exact(
+    const PTO2LogicalTensor* a,
+    const PTO2LogicalTensor* b
+);
+
+// === Interval Tree for O(log n) Queries ===
+// (in pto_interval_tree.h)
+bool pto2_interval_tree_insert(tree, low, high, producer_task_id, entry_index);
+int32_t pto2_interval_tree_query(tree, low, high, results, max_results);
+int32_t pto2_interval_tree_remove_stale(tree, task_threshold);
+```
+
+**GCD-Based Exact Overlap Detection:**
+
+The GCD algorithm solves the Diophantine equation to determine if two strided sequences share any common elements:
+
+```
+Tensor A touches offsets: offset_a + i * stride_a  (0 <= i < size_a)
+Tensor B touches offsets: offset_b + j * stride_b  (0 <= j < size_b)
+
+Overlap exists iff: offset_a + i*stride_a = offset_b + j*stride_b
+Rearranged: i*stride_a - j*stride_b = offset_b - offset_a = delta
+
+Solution exists iff: gcd(stride_a, stride_b) divides delta
+```
+
+Example demonstrating GCD advantage:
+
+```c
+// A: bytes [0, 8, 16, 24] (stride=8, size=4)
+// B: bytes [4, 12, 20, 28] (stride=8, size=4, offset=4)
+// These INTERLEAVE - no actual overlap!
+
+// Bounding box: A=[0,24], B=[4,28] -> OVERLAP (false positive!)
+bool fast = pto2_logical_tensor_overlap_fast(&A, &B);  // true (wrong!)
+
+// GCD: delta=4, gcd(8,8)=8, 4 % 8 != 0 -> NO OVERLAP
+bool exact = pto2_logical_tensor_overlap_exact(&A, &B);  // false (correct!)
+```
+
+**Interval Tree for O(log n + k) Queries:**
+
+When there are many views of the same raw tensor, hash table lookup degrades to O(n).
+The Interval Tree provides O(log n + k) queries where k is the number of results.
+
+```c
+// Interval Tree API
+typedef struct {
+    int64_t low, high;        // Bounding box interval
+    int32_t producer_task_id; // Associated producer
+    int32_t entry_index;      // Index into TensorMapEx
+} PTO2Interval;
+
+// Insert: O(log n) - AVL balanced
+bool pto2_interval_tree_insert(tree, low, high, producer_task_id, entry_index);
+
+// Query: O(log n + k) - find all overlapping intervals
+int32_t pto2_interval_tree_query(tree, low, high, results, max_results);
+
+// Lazy invalidation: remove stale entries
+int32_t pto2_interval_tree_remove_stale(tree, task_threshold);
+```
+
+**Performance Benchmark Results:**
+
+```
+Intervals: 1000, Queries: 10000
+Interval Tree: 0.002 s
+Linear Scan:   0.027 s
+Speedup:       11.9x
+Tree height:   12 (balanced, optimal ~14)
+```
+
+**When to use each method:**
+
+| Method | Complexity | Use Case |
+|--------|------------|----------|
+| Hash Table (TensorMapEx) | O(k) per bucket | Few views per tensor, fast insert |
+| Interval Tree | O(log n + k) | Many views of same tensor |
+| Linear Scan | O(n) | Very small datasets (<100) |
+
+**Extended TensorMap APIs (for LogicalTensor support):**
+
+```c
+// Extended TensorMap structure
+typedef struct {
+    int32_t* buckets;
+    PTO2TensorMapEntryEx* entry_pool;
+    int32_t pool_size, pool_head, num_buckets;
+    int32_t* task_entry_head;
+    int32_t last_task_alive;
+} PTO2TensorMapEx;
+
+// Insert tensor output
+void pto2_tensormapex_insert(
+    PTO2TensorMapEx* tm, 
+    const PTO2LogicalTensor* tensor, 
+    int32_t producer_task_id
+);
+
+// Lookup single overlapping producer (returns first found)
+int32_t pto2_tensormapex_lookup(
+    PTO2TensorMapEx* tm, 
+    const PTO2LogicalTensor* tensor
+);
+
+// Lookup ALL overlapping producers (for complete dependency graph)
+int32_t pto2_tensormapex_lookup_all(
+    PTO2TensorMapEx* tm, 
+    const PTO2LogicalTensor* tensor,
+    int32_t* producer_ids,    // Output array
+    int32_t max_producers     // Max size of output array
+);
+```
+
+**Usage Example:**
+
+```c
+// Create a 4x4 matrix
+PTO2LogicalTensor A;
+int64_t shape[] = {4, 4};
+float* data = malloc(16 * sizeof(float));
+pto2_logical_tensor_init_raw(&A, data, shape, 2, sizeof(float));
+
+// Task 100 produces A
+pto2_tensormapex_insert(&tm, &A, 100);
+
+// Create a view of top-left 2x2 submatrix
+PTO2LogicalTensor view;
+int64_t start[] = {0, 0};
+int64_t view_shape[] = {2, 2};
+pto2_logical_tensor_view(&A, &view, start, view_shape, 2);
+
+// Task 200 wants to read the view - find dependencies
+int32_t producers[16];
+int32_t count = pto2_tensormapex_lookup_all(&tm, &view, producers, 16);
+// count=1, producers[0]=100 (view overlaps with A)
+```
+
+---
+
 #### TensorMap Overlapping Region Detection (Advanced Design)
 
 ```
@@ -5330,3 +6054,415 @@ Benefits:
 - No need for oversized buffers
 - Flow control/backpressure works correctly
 - Realistic simulation of actual hardware behavior
+
+---
+
+## Multi-Threaded Simulation: Data Race Issues and Solutions
+
+本节记录在 A2A3_SIM 多线程仿真模式开发过程中遇到的 data race 问题及其解决方案。
+
+### 1. 问题背景
+
+在多线程仿真模式下，有多个并发执行的组件：
+- **Orchestrator 线程**：提交任务，构建依赖关系
+- **Scheduler 线程**：处理完成事件，转换任务状态
+- **Worker 线程（多个）**：执行任务，报告完成
+
+这些线程共享以下关键数据结构：
+- Task descriptors (`task_state`, `fanin_refcount`, `fanout_refcount`)
+- TensorMap (producer-consumer tracking)
+- Ready queues (per worker type)
+- Dependency lists (fanin/fanout chains)
+
+### 2. Data Race 问题及解决方案
+
+#### 2.1 Producer-Consumer 注册竞争
+
+**问题**：Producer 任务可能在 Consumer 完全注册之前就完成了。
+
+```
+时序问题：
+  Orchestrator                Producer Worker
+  ────────────                ───────────────
+  1. submit(Consumer)
+  2. lookup producer
+  3. add_consumer_to_producer ────────────────> Producer completes!
+     (此时 consumer 尚未完全注册)              fanout_refcount++
+                                               on_task_complete()
+                                               遍历 fanout_head (Consumer 不在其中!)
+  4. 完成注册
+     (Consumer 永远不会收到 fanin 通知!)
+```
+
+**解决方案**：使用 Per-Task Spinlock 保护 fanout 链表
+
+```c
+// 在 task descriptor 中添加
+typedef struct {
+    // ...
+    volatile int32_t fanout_lock;  // Spinlock for fanout list
+} PTO2TaskDescriptor;
+
+// add_consumer_to_producer 中获取锁
+void pto2_add_consumer_to_producer(orchestrator, producer_id, consumer_id, ...) {
+    // 获取 spinlock
+    while (__atomic_exchange_n(&producer_task->fanout_lock, 1, __ATOMIC_ACQUIRE) != 0) {
+        PTO2_SPIN_PAUSE();
+    }
+    
+    // 检查 producer 是否已完成
+    int32_t producer_state = PTO2_LOAD_ACQUIRE(&producer_task->task_state);
+    
+    if (producer_state >= PTO2_TASK_COMPLETED) {
+        // Producer 已完成，直接增加 consumer 的 fanin_refcount
+        __atomic_fetch_add(&consumer_fanin_refcount, 1, __ATOMIC_ACQ_REL);
+        if (fanin_refcount == fanin_count) {
+            // Consumer 变为 READY
+        }
+    }
+    
+    // 添加到 fanout 链表
+    // ...
+    
+    // 释放 spinlock
+    __atomic_store_n(&producer_task->fanout_lock, 0, __ATOMIC_RELEASE);
+}
+```
+
+#### 2.2 Task 状态转换竞争
+
+**问题**：多个线程可能同时尝试转换同一任务的状态。
+
+```
+场景：两个 Producer 同时完成，都尝试将同一 Consumer 从 PENDING 转为 READY
+
+  Worker 1 (Producer A)        Worker 2 (Producer B)
+  ────────────────────         ────────────────────
+  fanin_refcount++              fanin_refcount++
+  check: refcount == count      check: refcount == count
+  if (state == PENDING) {       if (state == PENDING) {
+      state = READY             // 两者都尝试设置！
+```
+
+**解决方案**：使用 CAS (Compare-And-Swap) 进行原子状态转换
+
+```c
+void check_and_transition_to_ready(scheduler, task_id) {
+    int32_t current = PTO2_LOAD_ACQUIRE(&task->task_state);
+    
+    // 只有 PENDING 状态才能转为 READY
+    if (current != PTO2_TASK_PENDING) return;
+    
+    // CAS: 原子地 PENDING -> READY
+    if (__atomic_compare_exchange_n(
+            &task->task_state,
+            &current,           // expected
+            PTO2_TASK_READY,    // desired
+            false,              // weak
+            __ATOMIC_ACQ_REL,
+            __ATOMIC_ACQUIRE)) {
+        // 成功：加入 ready queue
+        enqueue_ready(scheduler, task_id);
+    }
+    // 失败：另一个线程已经处理了
+}
+```
+
+#### 2.3 线程启动顺序问题
+
+**问题**：Orchestrator 在 Worker/Scheduler 准备好之前就开始提交任务。
+
+**解决方案**：使用条件变量同步启动顺序
+
+```c
+typedef struct {
+    pthread_mutex_t startup_mutex;
+    pthread_cond_t startup_cond;
+    int32_t workers_ready;
+    bool scheduler_ready;
+} PTO2ThreadContext;
+
+// Worker 线程启动时
+void* worker_thread_func(void* arg) {
+    // 初始化...
+    
+    pthread_mutex_lock(&ctx->startup_mutex);
+    ctx->workers_ready++;
+    pthread_cond_broadcast(&ctx->startup_cond);
+    pthread_mutex_unlock(&ctx->startup_mutex);
+    
+    // 开始工作循环...
+}
+
+// Orchestrator 启动时等待
+void orchestrator_start(ctx) {
+    pthread_mutex_lock(&ctx->startup_mutex);
+    while (ctx->workers_ready < total_workers || !ctx->scheduler_ready) {
+        pthread_cond_wait(&ctx->startup_cond, &ctx->startup_mutex);
+    }
+    pthread_mutex_unlock(&ctx->startup_mutex);
+    
+    // 现在可以安全提交任务
+}
+```
+
+#### 2.4 Completion Queue 满载问题
+
+**问题**：Worker 完成任务后无法推入 completion queue（队列满）。
+
+**解决方案**：重试机制 + 主动唤醒 Scheduler
+
+```c
+void pto2_worker_task_complete(worker, task_id, start_cycle, end_cycle) {
+    int retry_count = 0;
+    while (!pto2_completion_queue_push(&completion_queue, ...)) {
+        // 队列满，唤醒 scheduler 处理
+        pthread_mutex_lock(&done_mutex);
+        pthread_cond_signal(&completion_cond);
+        pthread_mutex_unlock(&done_mutex);
+        
+        retry_count++;
+        if (retry_count % 1000 == 0) {
+            fprintf(stderr, "[Worker %d] Completion queue full, retrying...\n",
+                    worker->worker_id);
+        }
+        PTO2_SPIN_PAUSE();
+    }
+    
+    // 成功后通知 scheduler
+    pthread_mutex_lock(&done_mutex);
+    pthread_cond_signal(&completion_cond);
+    pthread_mutex_unlock(&done_mutex);
+}
+```
+
+### 3. 原子操作宏定义
+
+为了代码可读性和跨平台兼容性，定义了以下宏：
+
+```c
+// 原子加载（acquire 语义）
+#define PTO2_LOAD_ACQUIRE(ptr) \
+    __atomic_load_n(ptr, __ATOMIC_ACQUIRE)
+
+// 原子存储（release 语义）
+#define PTO2_STORE_RELEASE(ptr, val) \
+    __atomic_store_n(ptr, val, __ATOMIC_RELEASE)
+
+// 自旋等待提示
+#define PTO2_SPIN_PAUSE() \
+    do { __asm__ volatile("yield" ::: "memory"); } while(0)
+```
+
+---
+
+## Clock-Based Load Balancing in Simulation Mode
+
+在仿真模式下，所有任务执行时间是瞬时的（无真实延迟），这导致 OS 线程调度的不公平性会被放大。本节描述基于时钟的负载均衡机制。
+
+### 1. 问题描述
+
+```
+没有负载均衡时的典型分布（24 Cube workers, 2048 任务）：
+
+  Worker 0:  342 tasks (16.7%)
+  Worker 1:  285 tasks (13.9%)
+  Worker 2:   89 tasks (4.3%)
+  ...
+  Worker 23:  12 tasks (0.6%)
+
+问题：某些 worker 获得大量任务，其他几乎空闲
+原因：pthread_cond_signal 倾向于唤醒同一个 worker（OS 调度偏好）
+```
+
+### 2. 设计目标
+
+**核心规则**：
+> 当时钟相同时，可以竞争不公平；但时钟不同时，不允许把任务分配给时钟更大的 worker。
+
+这意味着：
+- Clock 更小的 worker 应该优先获得任务
+- Clock 相同时允许多线程自由竞争
+- Clock 更大的 worker 必须等待，直到其 clock 变为最小
+
+### 3. 实现机制
+
+#### 3.1 Per-Worker 时钟追踪
+
+```c
+typedef struct {
+    // 每个 worker 的当前仿真时钟
+    volatile int64_t worker_current_cycle[PTO2_MAX_WORKERS];
+    
+    // 每个 worker 的等待标志
+    volatile bool worker_waiting[PTO2_MAX_WORKERS];
+    
+    // 每个 worker 的独立条件变量
+    pthread_cond_t worker_cond[PTO2_MAX_WORKERS];
+} PTO2ThreadContext;
+```
+
+#### 3.2 Worker 获取任务时的时钟检查
+
+```c
+// 检查当前 worker 是否有最小时钟
+static bool worker_has_min_clock(PTO2WorkerContext* worker, PTO2ThreadContext* ctx) {
+    int64_t my_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[worker->worker_id]);
+    
+    // 与所有同类型 worker 比较（不只是等待中的）
+    for (int32_t i = start_id; i < end_id; i++) {
+        if (i == worker->worker_id) continue;
+        
+        int64_t other_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+        if (other_clock < my_clock) {
+            return false;  // 存在更小时钟的 worker
+        }
+        // 时钟相等时允许竞争，不返回 false
+    }
+    return true;
+}
+```
+
+#### 3.3 Worker 获取任务的完整流程
+
+```c
+int32_t pto2_worker_get_task(PTO2WorkerContext* worker) {
+    // 标记为等待状态
+    __atomic_store_n(&ctx->worker_waiting[worker->worker_id], true, __ATOMIC_RELEASE);
+    
+    pthread_mutex_lock(mutex);
+    
+    while (!worker->shutdown) {
+        if (pto2_ready_queue_empty(queue)) {
+            // 队列空，等待
+            pthread_cond_wait(my_cond, mutex);
+        } else if (!worker_has_min_clock(worker, ctx)) {
+            // 队列有任务但我不是最小时钟
+            // 广播唤醒所有 worker，然后等待
+            pthread_cond_broadcast(&ctx->ready_cond[worker->worker_type]);
+            pthread_cond_timedwait(my_cond, mutex, &timeout);
+        } else {
+            // 队列有任务且我是最小时钟 - 获取任务
+            break;
+        }
+    }
+    
+    // 不再等待
+    __atomic_store_n(&ctx->worker_waiting[worker->worker_id], false, __ATOMIC_RELEASE);
+    
+    // 获取任务
+    int32_t task_id = pto2_ready_queue_pop(queue);
+    
+    // 如果还有任务，唤醒其他最小时钟的等待 worker
+    if (!pto2_ready_queue_empty(queue)) {
+        wake_min_clock_workers(ctx, worker->worker_type);
+    }
+    
+    pthread_mutex_unlock(mutex);
+    return task_id;
+}
+```
+
+#### 3.4 任务入队时的选择性唤醒
+
+```c
+bool pto2_ready_queue_push_wake_min_clock(queue, task_id, mutex,
+                                           worker_clocks, worker_waiting,
+                                           worker_conds, worker_start, worker_end) {
+    pthread_mutex_lock(mutex);
+    
+    bool success = pto2_ready_queue_push(queue, task_id);
+    
+    if (success) {
+        // 唤醒所有等待中的 worker
+        // 它们会自己检查时钟是否最小
+        for (int32_t i = worker_start; i < worker_end; i++) {
+            if (__atomic_load_n(&worker_waiting[i], __ATOMIC_ACQUIRE)) {
+                pthread_cond_signal(&worker_conds[i]);
+            }
+        }
+    }
+    
+    pthread_mutex_unlock(mutex);
+    return success;
+}
+```
+
+#### 3.5 任务完成时更新时钟
+
+```c
+void* pto2_worker_thread_func_sim(void* arg) {
+    while (!worker->shutdown) {
+        int32_t task_id = pto2_worker_get_task(worker);
+        
+        // 计算任务开始时间（考虑依赖）
+        int64_t start_cycle = max(earliest_dependency_end, worker_free_cycle);
+        
+        // 模拟执行
+        int64_t cycles = pto2_worker_simulate_task(worker, task_id);
+        int64_t end_cycle = start_cycle + cycles;
+        
+        // ========== 关键：立即更新时钟 ==========
+        // 其他 worker 可以看到我的预期完成时间
+        PTO2_STORE_RELEASE(&ctx->worker_current_cycle[worker->worker_id], end_cycle);
+        
+        // 报告完成
+        pto2_worker_task_complete(worker, task_id, start_cycle, end_cycle);
+    }
+}
+```
+
+### 4. 负载均衡效果
+
+实施后的典型分布：
+
+```
+负载均衡后（24 Cube workers, 2048 任务）：
+
+  Cube 0:  86 tasks    Cube 6:  85 tasks    Cube 12: 86 tasks    Cube 18: 85 tasks
+  Cube 1:  86 tasks    Cube 7:  85 tasks    Cube 13: 85 tasks    Cube 19: 86 tasks
+  Cube 2:  86 tasks    Cube 8:  85 tasks    Cube 14: 85 tasks    Cube 20: 86 tasks
+  Cube 3:  86 tasks    Cube 9:  85 tasks    Cube 15: 85 tasks    Cube 21: 85 tasks
+  Cube 4:  85 tasks    Cube 10: 85 tasks    Cube 16: 85 tasks    Cube 22: 85 tasks
+  Cube 5:  86 tasks    Cube 11: 85 tasks    Cube 17: 85 tasks    Cube 23: 85 tasks
+
+  均值: 85.3  标准差: 0.5  范围: 85-86 ✓
+```
+
+### 5. 调试支持
+
+编译时启用 `PTO2_DEBUG_LOAD_BALANCE` 可打印详细的任务分配日志：
+
+```bash
+make debug_balance    # 启用调试
+make bgemm            # 运行测试
+
+# 输出示例：
+[TASK_GET] Worker 3 (clock=500) got task 42
+  All CUBE workers:
+    Worker  0: clock=    500  WAITING
+    Worker  1: clock=    500  WAITING
+    Worker  2: clock=    600  WAITING
+    Worker  3: clock=    500  GOT_TASK
+```
+
+如果出现 `<-- SMALLER CLOCK!` 标记，说明存在违规（不应该发生）。
+
+### 6. 性能考量
+
+- **开销**：每次获取任务时需要遍历同类型所有 worker 的时钟
+- **适用场景**：仅仿真模式需要，真实硬件执行有自然延迟
+- **可关闭**：通过不定义 `PTO2_DEBUG_LOAD_BALANCE` 减少调试开销
+
+---
+
+## TensorMap 详细设计
+
+TensorMap 的完整设计文档请参阅：[tensormap_design.md](tensormap_design.md)
+
+主要内容包括：
+- 哈希策略（仅按 base_ptr 哈希）
+- 重叠检测算法（1D 区间 / 边界盒）
+- View/Reshape/Transpose 支持
+- 惰性失效与链截断优化
+- Ring Buffer 池管理

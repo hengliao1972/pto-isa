@@ -7,6 +7,7 @@ CC = gcc
 AR = ar
 CFLAGS = -Wall -Wextra -O3 -fPIC -std=c11
 DEBUG_FLAGS = -g -DDEBUG -O0
+DEBUG_BALANCE_FLAGS = -g -DPTO2_DEBUG_LOAD_BALANCE -O2
 INCLUDES = -I. -I./runtime_a2a3_sim/core_model
 LDFLAGS = -lpthread
 
@@ -15,6 +16,8 @@ SRCS = \
 	pto_shared_memory.c \
 	pto_ring_buffer.c \
 	pto_tensormap.c \
+	pto_logical_tensor.c \
+	pto_interval_tree.c \
 	pto_scheduler.c \
 	pto_orchestrator.c \
 	pto_runtime2.c \
@@ -30,6 +33,8 @@ HEADERS = \
 	pto_shared_memory.h \
 	pto_ring_buffer.h \
 	pto_tensormap.h \
+	pto_logical_tensor.h \
+	pto_interval_tree.h \
 	pto_scheduler.h \
 	pto_orchestrator.h \
 	pto_runtime2.h \
@@ -75,6 +80,10 @@ $(SHARED_LIB): $(OBJS)
 debug: CFLAGS += $(DEBUG_FLAGS)
 debug: clean lib
 
+# Debug load balance (prints worker states when getting tasks)
+debug_balance: CFLAGS += $(DEBUG_BALANCE_FLAGS)
+debug_balance: clean lib
+
 # Build with core model integration
 core_model: CFLAGS += -DA2A3_CORE_SIM_AVAILABLE
 core_model: $(CORE_MODEL_LIB)
@@ -115,29 +124,30 @@ $(TEST_DIR)/test_runtime2.c:
 	@echo '    return 0;' >> $@
 	@echo '}' >> $@
 
-# BGEMM test (single-threaded)
+# BGEMM test (multi-threaded)
 bgemm: lib
 	@echo "Building BGEMM test..."
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(TEST_DIR)/test_bgemm_runtime2 \
 		$(TEST_DIR)/test_bgemm_runtime2.c -L. -lpto_runtime2 $(LDFLAGS)
-	@echo "Running BGEMM test (single-threaded)..."
-	@cd $(TEST_DIR) && ./test_bgemm_runtime2
-
-# BGEMM test (multi-threaded)
-bgemm-mt: lib
-	@echo "Building BGEMM test..."
-	$(CC) $(CFLAGS) $(INCLUDES) -o $(TEST_DIR)/test_bgemm_runtime2 \
-		$(TEST_DIR)/test_bgemm_runtime2.c -L. -lpto_runtime2 $(LDFLAGS)
 	@echo "Running BGEMM test (multi-threaded)..."
-	@cd $(TEST_DIR) && ./test_bgemm_runtime2 4 4 4 4 1
+	@cd $(TEST_DIR) && ./test_bgemm_runtime2 4 4 4 4
 
-# BGEMM large test (multi-threaded, tests flow control)
+# BGEMM large test (multi-threaded)
 bgemm-large: lib
 	@echo "Building BGEMM test..."
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(TEST_DIR)/test_bgemm_runtime2 \
 		$(TEST_DIR)/test_bgemm_runtime2.c -L. -lpto_runtime2 $(LDFLAGS)
 	@echo "Running large BGEMM test (multi-threaded)..."
-	@cd $(TEST_DIR) && ./test_bgemm_runtime2 16 8 8 8 1
+	@cd $(TEST_DIR) && ./test_bgemm_runtime2 16 8 8 8
+
+# BGEMM flow control test (small task window to trigger flow control)
+# Total tasks = 8*8*8*4*2 = 4096, window = 128, needs ~32 flow control cycles
+bgemm-flow: lib
+	@echo "Building BGEMM test..."
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TEST_DIR)/test_bgemm_runtime2 \
+		$(TEST_DIR)/test_bgemm_runtime2.c -L. -lpto_runtime2 $(LDFLAGS)
+	@echo "Running BGEMM flow control test (small window)..."
+	@cd $(TEST_DIR) && ./test_bgemm_runtime2 8 8 8 4 128
 
 # Clean
 clean:
@@ -159,6 +169,9 @@ install: lib
 
 .PHONY: install
 
+# BGEMM alias
+bgemm-mt: bgemm
+
 # Help
 help:
 	@echo "PTO Runtime2 Build System"
@@ -170,8 +183,7 @@ help:
 	@echo "  debug      - Build with debug symbols"
 	@echo "  core_model - Build with A2A3 core model integration"
 	@echo "  test       - Build and run tests"
-	@echo "  bgemm      - Build and run BGEMM test (single-threaded)"
-	@echo "  bgemm-mt   - Build and run BGEMM test (multi-threaded)"
+	@echo "  bgemm      - Build and run BGEMM test (multi-threaded)"
 	@echo "  bgemm-large- Build and run large BGEMM test (multi-threaded)"
 	@echo "  clean      - Remove build artifacts"
 	@echo "  clean-all  - Remove all artifacts including core model"
@@ -184,5 +196,4 @@ help:
 	@echo "  PREFIX     - Installation prefix (default: /usr/local)"
 	@echo ""
 	@echo "BGEMM Test Usage:"
-	@echo "  ./tests/test_bgemm_runtime2 [batch] [m] [n] [k] [mode]"
-	@echo "    mode: 0 = single-threaded, 1 = multi-threaded"
+	@echo "  ./tests/test_bgemm_runtime2 [batch] [m] [n] [k]"

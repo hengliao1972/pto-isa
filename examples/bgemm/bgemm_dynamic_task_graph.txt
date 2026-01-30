@@ -1,0 +1,3488 @@
+================================================================================
+PTO RUNTIME DUMP
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+  Total tasks scheduled:  64
+  Total tasks completed:  0
+  Active task count:      64
+  Next task ID:           64
+  Ready queue size:       0
+
+================================================================================
+TASK TABLE (sliding window, size=8192)
+================================================================================
+
+  Window: tasks 0 to 63 (64 tasks)
+
+--------------------------------------------------------------------------------
+TASK 0 (slot 0)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 1 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d089040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 1 (slot 1)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 33 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d089040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 2 (slot 2)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 3 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d08d040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 3 (slot 3)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 35 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d08d040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 4 (slot 4)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 5 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d091040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 5 (slot 5)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 9 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d091040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 6 (slot 6)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 7 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d095040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 7 (slot 7)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 11 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d095040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 8 (slot 8)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 9 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d099040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 9 (slot 9)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 37 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d099040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 10 (slot 10)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 11 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d09d040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 11 (slot 11)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 39 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d09d040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 12 (slot 12)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 13 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0a1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 13 (slot 13)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 17 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0a1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 14 (slot 14)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 15 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0a5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 15 (slot 15)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 19 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0a5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 16 (slot 16)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 17 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0a9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 17 (slot 17)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 45 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0a9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 18 (slot 18)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 19 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0ad040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 19 (slot 19)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 47 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0ad040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 20 (slot 20)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 21 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0b1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 21 (slot 21)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 25 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0b1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 22 (slot 22)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 23 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0b5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 23 (slot 23)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 27 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0b5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 24 (slot 24)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 25 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0b9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 25 (slot 25)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 53 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0b9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 26 (slot 26)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 27 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0bd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 27 (slot 27)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 55 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0bd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 28 (slot 28)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 29 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0c1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 29 (slot 29)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 61 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 8
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0c1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 8
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 30 (slot 30)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 31 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0c5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 31 (slot 31)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 1
+    fanin_refcount  = 0
+    fanin_remaining = 1
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 63 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 9
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0c5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 9
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 32 (slot 32)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 33 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0c9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 33 (slot 33)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0c9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 34 (slot 34)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 35 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0cd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 35 (slot 35)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0cd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 36 (slot 36)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 37 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0d1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 37 (slot 37)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 41 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0d1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 38 (slot 38)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 39 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 1
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0d5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 39 (slot 39)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 43 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0d5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 40 (slot 40)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 41 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0d9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 41 (slot 41)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0d9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 42 (slot 42)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 43 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0dd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 43 (slot 43)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0dd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 44 (slot 44)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 45 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0e1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 45 (slot 45)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 49 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0e1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 46 (slot 46)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 47 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0e5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 47 (slot 47)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 51 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0e5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 48 (slot 48)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 49 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0e9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 49 (slot 49)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0e9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 50 (slot 50)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 51 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0ed040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 51 (slot 51)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0ed040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 52 (slot 52)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 53 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0f1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 53 (slot 53)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 57 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0f1040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 54 (slot 54)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 55 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0f5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 55 (slot 55)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 59 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0f5040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 56 (slot 56)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 57 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 2
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0f9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 57 (slot 57)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0f9040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 6
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 58 (slot 58)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 59 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 3
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d0fd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 59 (slot 59)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d0fd040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 60 (slot 60)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 61 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 4
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d101040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 61 (slot 61)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 8
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d101040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 8
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 62 (slot 62)
+--------------------------------------------------------------------------------
+  Function:     gemm_tile
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 0
+    fanin_refcount  = 0
+    fanin_remaining = 0
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 2
+    fanout_consumers  = 1
+    fanout_refcount   = 1
+    Consumers:
+      -> Task 63 (tile_add)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6c707010
+        row_offset: 7
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6c306010
+        row_offset: 5
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6d105040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+--------------------------------------------------------------------------------
+TASK 63 (slot 63)
+--------------------------------------------------------------------------------
+  Function:     tile_add
+  Func Ptr:     (nil)
+  Is Active:    true
+  Is Submitted: true
+  Is Complete:  false
+  Is Consumed:  false
+  Scope Depth:  1
+
+  BUFFER SIZE (InCore Tile Buffers)
+  ----------------------------------
+    without_reuse = 0 bytes (0.00 KB)
+    with_reuse    = 0 bytes (0.00 KB)
+
+  FANIN COUNTER
+  -------------
+    fanin_count     = 2
+    fanin_refcount  = 0
+    fanin_remaining = 2
+
+  FANOUT LIST (consumers that depend on this task)
+  ------------------------------------------------
+    fanout_total      = 1
+    fanout_consumers  = 0
+    fanout_refcount   = 1
+    Consumers:
+      (none)
+
+  ARGUMENTS (num_args = 3)
+  -------------------------
+    [0] INPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 9
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [1] INPUT:
+        tensor:     0xffff6d105040
+        row_offset: 0
+        col_offset: 0
+        rows:       32
+        cols:       128
+    [2] OUTPUT:
+        tensor:     0xffff6bf05010
+        row_offset: 9
+        col_offset: 0
+        rows:       32
+        cols:       128
+
+================================================================================
+READY QUEUE
+================================================================================
+
+  Head:  0
+  Tail:  0
+  Count: 0
+  Queue: [] (empty)
+
+================================================================================
+TENSOR MAP (non-empty buckets)
+================================================================================
+
+  [bucket 41] tensor=0xffff6d0a5040, offset=[0,0], shape=[32,128] -> producer: Task 14
+  [bucket 44] tensor=0xffff6bf05010, offset=[6,0], shape=[32,128] -> producer: Task 57
+  [bucket 44] tensor=0xffff6bf05010, offset=[6,0], shape=[32,128] -> producer: Task 53
+  [bucket 44] tensor=0xffff6bf05010, offset=[6,0], shape=[32,128] -> producer: Task 25
+  [bucket 44] tensor=0xffff6bf05010, offset=[6,0], shape=[32,128] -> producer: Task 21
+  [bucket 375] tensor=0xffff6bf05010, offset=[2,0], shape=[32,128] -> producer: Task 41
+  [bucket 375] tensor=0xffff6bf05010, offset=[2,0], shape=[32,128] -> producer: Task 37
+  [bucket 375] tensor=0xffff6bf05010, offset=[2,0], shape=[32,128] -> producer: Task 9
+  [bucket 375] tensor=0xffff6bf05010, offset=[2,0], shape=[32,128] -> producer: Task 5
+  [bucket 636] tensor=0xffff6d099040, offset=[0,0], shape=[32,128] -> producer: Task 8
+  [bucket 662] tensor=0xffff6d0d1040, offset=[0,0], shape=[32,128] -> producer: Task 36
+  [bucket 666] tensor=0xffff6bf05010, offset=[0,0], shape=[32,128] -> producer: Task 33
+  [bucket 666] tensor=0xffff6bf05010, offset=[0,0], shape=[32,128] -> producer: Task 1
+  [bucket 1321] tensor=0xffff6d0d9040, offset=[0,0], shape=[32,128] -> producer: Task 40
+  [bucket 1478] tensor=0xffff6bf05010, offset=[7,0], shape=[32,128] -> producer: Task 59
+  [bucket 1478] tensor=0xffff6bf05010, offset=[7,0], shape=[32,128] -> producer: Task 55
+  [bucket 1478] tensor=0xffff6bf05010, offset=[7,0], shape=[32,128] -> producer: Task 27
+  [bucket 1478] tensor=0xffff6bf05010, offset=[7,0], shape=[32,128] -> producer: Task 23
+  [bucket 1686] tensor=0xffff6d0a1040, offset=[0,0], shape=[32,128] -> producer: Task 12
+  [bucket 1806] tensor=0xffff6bf05010, offset=[9,0], shape=[32,128] -> producer: Task 63
+  [bucket 1806] tensor=0xffff6bf05010, offset=[9,0], shape=[32,128] -> producer: Task 31
+  [bucket 1840] tensor=0xffff6bf05010, offset=[8,0], shape=[32,128] -> producer: Task 61
+  [bucket 1840] tensor=0xffff6bf05010, offset=[8,0], shape=[32,128] -> producer: Task 29
+  [bucket 1859] tensor=0xffff6d0dd040, offset=[0,0], shape=[32,128] -> producer: Task 42
+  [bucket 2115] tensor=0xffff6d0e1040, offset=[0,0], shape=[32,128] -> producer: Task 44
+  [bucket 2345] tensor=0xffff6d0a9040, offset=[0,0], shape=[32,128] -> producer: Task 16
+  [bucket 2673] tensor=0xffff6bf05010, offset=[1,0], shape=[32,128] -> producer: Task 35
+  [bucket 2673] tensor=0xffff6bf05010, offset=[1,0], shape=[32,128] -> producer: Task 3
+  [bucket 2940] tensor=0xffff6d0ad040, offset=[0,0], shape=[32,128] -> producer: Task 18
+  [bucket 2966] tensor=0xffff6d0e5040, offset=[0,0], shape=[32,128] -> producer: Task 46
+  [bucket 3139] tensor=0xffff6d0b1040, offset=[0,0], shape=[32,128] -> producer: Task 20
+  [bucket 3222] tensor=0xffff6d0e9040, offset=[0,0], shape=[32,128] -> producer: Task 48
+  [bucket 3624] tensor=0xffff6d0ed040, offset=[0,0], shape=[32,128] -> producer: Task 50
+  [bucket 3990] tensor=0xffff6d0b5040, offset=[0,0], shape=[32,128] -> producer: Task 22
+  [bucket 4115] tensor=0xffff6bf05010, offset=[5,0], shape=[32,128] -> producer: Task 51
+  [bucket 4115] tensor=0xffff6bf05010, offset=[5,0], shape=[32,128] -> producer: Task 47
+  [bucket 4115] tensor=0xffff6bf05010, offset=[5,0], shape=[32,128] -> producer: Task 19
+  [bucket 4115] tensor=0xffff6bf05010, offset=[5,0], shape=[32,128] -> producer: Task 15
+  [bucket 4246] tensor=0xffff6d0b9040, offset=[0,0], shape=[32,128] -> producer: Task 24
+  [bucket 4419] tensor=0xffff6d0f5040, offset=[0,0], shape=[32,128] -> producer: Task 54
+  [bucket 4649] tensor=0xffff6d0bd040, offset=[0,0], shape=[32,128] -> producer: Task 26
+  [bucket 5270] tensor=0xffff6d089040, offset=[0,0], shape=[32,128] -> producer: Task 0
+  [bucket 5443] tensor=0xffff6d0c5040, offset=[0,0], shape=[32,128] -> producer: Task 30
+  [bucket 5526] tensor=0xffff6d0fd040, offset=[0,0], shape=[32,128] -> producer: Task 58
+  [bucket 5673] tensor=0xffff6d08d040, offset=[0,0], shape=[32,128] -> producer: Task 2
+  [bucket 5928] tensor=0xffff6d0f1040, offset=[0,0], shape=[32,128] -> producer: Task 52
+  [bucket 6184] tensor=0xffff6d105040, offset=[0,0], shape=[32,128] -> producer: Task 62
+  [bucket 6524] tensor=0xffff6d095040, offset=[0,0], shape=[32,128] -> producer: Task 6
+  [bucket 6550] tensor=0xffff6d0cd040, offset=[0,0], shape=[32,128] -> producer: Task 34
+  [bucket 6723] tensor=0xffff6d0f9040, offset=[0,0], shape=[32,128] -> producer: Task 56
+  [bucket 6953] tensor=0xffff6d0c1040, offset=[0,0], shape=[32,128] -> producer: Task 28
+  [bucket 7107] tensor=0xffff6bf05010, offset=[3,0], shape=[32,128] -> producer: Task 43
+  [bucket 7107] tensor=0xffff6bf05010, offset=[3,0], shape=[32,128] -> producer: Task 39
+  [bucket 7107] tensor=0xffff6bf05010, offset=[3,0], shape=[32,128] -> producer: Task 11
+  [bucket 7107] tensor=0xffff6bf05010, offset=[3,0], shape=[32,128] -> producer: Task 7
+  [bucket 7209] tensor=0xffff6d0d5040, offset=[0,0], shape=[32,128] -> producer: Task 38
+  [bucket 7574] tensor=0xffff6d09d040, offset=[0,0], shape=[32,128] -> producer: Task 10
+  [bucket 7747] tensor=0xffff6d0c9040, offset=[0,0], shape=[32,128] -> producer: Task 32
+  [bucket 7830] tensor=0xffff6d101040, offset=[0,0], shape=[32,128] -> producer: Task 60
+  [bucket 7977] tensor=0xffff6d091040, offset=[0,0], shape=[32,128] -> producer: Task 4
+  [bucket 8127] tensor=0xffff6bf05010, offset=[4,0], shape=[32,128] -> producer: Task 49
+  [bucket 8127] tensor=0xffff6bf05010, offset=[4,0], shape=[32,128] -> producer: Task 45
+  [bucket 8127] tensor=0xffff6bf05010, offset=[4,0], shape=[32,128] -> producer: Task 17
+  [bucket 8127] tensor=0xffff6bf05010, offset=[4,0], shape=[32,128] -> producer: Task 13
+
+  Total tensor entries: 64
+
+================================================================================
+DEPENDENCY GRAPH (Producer -> Consumer)
+================================================================================
+
+  Task 0 (gemm_tile) [READY]
+    └──> Task 1 (tile_add)
+  Task 1 (tile_add) [WAIT]
+    └──> Task 33 (tile_add)
+  Task 2 (gemm_tile) [READY]
+    └──> Task 3 (tile_add)
+  Task 3 (tile_add) [WAIT]
+    └──> Task 35 (tile_add)
+  Task 4 (gemm_tile) [READY]
+    └──> Task 5 (tile_add)
+  Task 5 (tile_add) [WAIT]
+    └──> Task 9 (tile_add)
+  Task 6 (gemm_tile) [READY]
+    └──> Task 7 (tile_add)
+  Task 7 (tile_add) [WAIT]
+    └──> Task 11 (tile_add)
+  Task 8 (gemm_tile) [READY]
+    └──> Task 9 (tile_add)
+  Task 9 (tile_add) [WAIT]
+    └──> Task 37 (tile_add)
+  Task 10 (gemm_tile) [READY]
+    └──> Task 11 (tile_add)
+  Task 11 (tile_add) [WAIT]
+    └──> Task 39 (tile_add)
+  Task 12 (gemm_tile) [READY]
+    └──> Task 13 (tile_add)
+  Task 13 (tile_add) [WAIT]
+    └──> Task 17 (tile_add)
+  Task 14 (gemm_tile) [READY]
+    └──> Task 15 (tile_add)
+  Task 15 (tile_add) [WAIT]
+    └──> Task 19 (tile_add)
+  Task 16 (gemm_tile) [READY]
+    └──> Task 17 (tile_add)
+  Task 17 (tile_add) [WAIT]
+    └──> Task 45 (tile_add)
+  Task 18 (gemm_tile) [READY]
+    └──> Task 19 (tile_add)
+  Task 19 (tile_add) [WAIT]
+    └──> Task 47 (tile_add)
+  Task 20 (gemm_tile) [READY]
+    └──> Task 21 (tile_add)
+  Task 21 (tile_add) [WAIT]
+    └──> Task 25 (tile_add)
+  Task 22 (gemm_tile) [READY]
+    └──> Task 23 (tile_add)
+  Task 23 (tile_add) [WAIT]
+    └──> Task 27 (tile_add)
+  Task 24 (gemm_tile) [READY]
+    └──> Task 25 (tile_add)
+  Task 25 (tile_add) [WAIT]
+    └──> Task 53 (tile_add)
+  Task 26 (gemm_tile) [READY]
+    └──> Task 27 (tile_add)
+  Task 27 (tile_add) [WAIT]
+    └──> Task 55 (tile_add)
+  Task 28 (gemm_tile) [READY]
+    └──> Task 29 (tile_add)
+  Task 29 (tile_add) [WAIT]
+    └──> Task 61 (tile_add)
+  Task 30 (gemm_tile) [READY]
+    └──> Task 31 (tile_add)
+  Task 31 (tile_add) [WAIT]
+    └──> Task 63 (tile_add)
+  Task 32 (gemm_tile) [READY]
+    └──> Task 33 (tile_add)
+  Task 33 (tile_add) [WAIT]
+  Task 34 (gemm_tile) [READY]
+    └──> Task 35 (tile_add)
+  Task 35 (tile_add) [WAIT]
+  Task 36 (gemm_tile) [READY]
+    └──> Task 37 (tile_add)
+  Task 37 (tile_add) [WAIT]
+    └──> Task 41 (tile_add)
+  Task 38 (gemm_tile) [READY]
+    └──> Task 39 (tile_add)
+  Task 39 (tile_add) [WAIT]
+    └──> Task 43 (tile_add)
+  Task 40 (gemm_tile) [READY]
+    └──> Task 41 (tile_add)
+  Task 41 (tile_add) [WAIT]
+  Task 42 (gemm_tile) [READY]
+    └──> Task 43 (tile_add)
+  Task 43 (tile_add) [WAIT]
+  Task 44 (gemm_tile) [READY]
+    └──> Task 45 (tile_add)
+  Task 45 (tile_add) [WAIT]
+    └──> Task 49 (tile_add)
+  Task 46 (gemm_tile) [READY]
+    └──> Task 47 (tile_add)
+  Task 47 (tile_add) [WAIT]
+    └──> Task 51 (tile_add)
+  Task 48 (gemm_tile) [READY]
+    └──> Task 49 (tile_add)
+  Task 49 (tile_add) [WAIT]
+  Task 50 (gemm_tile) [READY]
+    └──> Task 51 (tile_add)
+  Task 51 (tile_add) [WAIT]
+  Task 52 (gemm_tile) [READY]
+    └──> Task 53 (tile_add)
+  Task 53 (tile_add) [WAIT]
+    └──> Task 57 (tile_add)
+  Task 54 (gemm_tile) [READY]
+    └──> Task 55 (tile_add)
+  Task 55 (tile_add) [WAIT]
+    └──> Task 59 (tile_add)
+  Task 56 (gemm_tile) [READY]
+    └──> Task 57 (tile_add)
+  Task 57 (tile_add) [WAIT]
+  Task 58 (gemm_tile) [READY]
+    └──> Task 59 (tile_add)
+  Task 59 (tile_add) [WAIT]
+  Task 60 (gemm_tile) [READY]
+    └──> Task 61 (tile_add)
+  Task 61 (tile_add) [WAIT]
+  Task 62 (gemm_tile) [READY]
+    └──> Task 63 (tile_add)
+  Task 63 (tile_add) [WAIT]
+
+================================================================================
+END OF DUMP
+================================================================================

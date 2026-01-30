@@ -6,6 +6,10 @@
  * Based on: docs/runtime_buffer_manager_methods.md
  */
 
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 #include "pto_worker.h"
 #include "pto_runtime2.h"
 #include "pto_runtime2_threaded.h"
@@ -13,6 +17,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>
+#include <sched.h>
+
 
 // =============================================================================
 // Worker Type Names
@@ -176,6 +183,33 @@ bool pto2_completion_queue_empty(PTO2CompletionQueue* queue) {
 // Task Acquisition and Execution
 // =============================================================================
 
+// Check if this worker has the smallest clock among ALL workers of same type
+// Compare with ALL workers - if any worker (waiting or not) has smaller clock,
+// it should get the task first (it will finish and enter waiting state soon)
+// When clocks are equal, allow competition (multi-threading fairness)
+static bool worker_has_min_clock(PTO2WorkerContext* worker, PTO2ThreadContext* ctx) {
+    int64_t my_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[worker->worker_id]);
+    
+    int32_t start_id, end_id;
+    if (worker->worker_type == PTO2_WORKER_CUBE) {
+        start_id = 0;
+        end_id = ctx->num_cube_workers;
+    } else {
+        start_id = ctx->num_cube_workers;
+        end_id = ctx->num_cube_workers + ctx->num_vector_workers;
+    }
+    
+    for (int32_t i = start_id; i < end_id; i++) {
+        if (i == worker->worker_id) continue;
+        int64_t other_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+        if (other_clock < my_clock) {
+            return false;  // Another worker has smaller clock - must wait
+        }
+        // When clocks are equal, allow competition
+    }
+    return true;  // I have the smallest clock (or equal)
+}
+
 int32_t pto2_worker_get_task(PTO2WorkerContext* worker) {
     PTO2RuntimeThreaded* rt = (PTO2RuntimeThreaded*)worker->runtime;
     PTO2ThreadContext* ctx = &rt->thread_ctx;
@@ -184,10 +218,142 @@ int32_t pto2_worker_get_task(PTO2WorkerContext* worker) {
     // Get the ready queue for this worker type
     PTO2ReadyQueue* queue = &sched->ready_queues[worker->worker_type];
     pthread_mutex_t* mutex = &ctx->ready_mutex[worker->worker_type];
-    pthread_cond_t* cond = &ctx->ready_cond[worker->worker_type];
     
-    // Block until we get a task or shutdown
-    return pto2_ready_queue_pop_threadsafe(queue, mutex, cond, &worker->shutdown);
+    // Use per-worker condition variable
+    pthread_cond_t* my_cond = &ctx->worker_cond[worker->worker_id];
+    
+    while (!worker->shutdown) {
+        // Mark this worker as waiting BEFORE acquiring mutex
+        // This ensures we're considered when tasks are enqueued
+        __atomic_store_n(&ctx->worker_waiting[worker->worker_id], true, __ATOMIC_RELEASE);
+        
+        pthread_mutex_lock(mutex);
+        
+        // Wait while:
+        // 1. Queue is empty, OR
+        // 2. Queue has tasks but another waiting worker has smaller clock
+        // Use timed wait to avoid lost signals causing permanent waits
+        struct timespec timeout;
+        while (!worker->shutdown) {
+            if (pto2_ready_queue_empty(queue)) {
+                // Queue empty - wait for task
+                pthread_cond_wait(my_cond, mutex);
+            } else if (!worker_has_min_clock(worker, ctx)) {
+                // Queue has tasks but I don't have the smallest clock
+                // Signal ALL workers with min clock and wait
+                int32_t start_id, end_id;
+                if (worker->worker_type == PTO2_WORKER_CUBE) {
+                    start_id = 0;
+                    end_id = ctx->num_cube_workers;
+                } else {
+                    start_id = ctx->num_cube_workers;
+                    end_id = ctx->num_cube_workers + ctx->num_vector_workers;
+                }
+                int64_t my_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[worker->worker_id]);
+                // Find global min clock
+                int64_t global_min = INT64_MAX;
+                for (int32_t i = start_id; i < end_id; i++) {
+                    int64_t clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+                    if (clock < global_min) {
+                        global_min = clock;
+                    }
+                }
+                // Broadcast to wake all workers (they will re-check)
+                pthread_cond_broadcast(&ctx->ready_cond[worker->worker_type]);
+                // Wait until my clock becomes min
+                struct timespec timeout;
+                clock_gettime(CLOCK_REALTIME, &timeout);
+                timeout.tv_nsec += 100000;  // 100us timeout
+                if (timeout.tv_nsec >= 1000000000) {
+                    timeout.tv_sec += 1;
+                    timeout.tv_nsec -= 1000000000;
+                }
+                pthread_cond_timedwait(my_cond, mutex, &timeout);
+            } else {
+                // Queue has tasks AND I have smallest clock - take task
+                break;
+            }
+        }
+        
+        // No longer waiting
+        __atomic_store_n(&ctx->worker_waiting[worker->worker_id], false, __ATOMIC_RELEASE);
+        
+        if (worker->shutdown && pto2_ready_queue_empty(queue)) {
+            pthread_mutex_unlock(mutex);
+            return -1;
+        }
+        
+        // Take the task (we have the smallest clock among waiting workers)
+        int32_t task_id = pto2_ready_queue_pop(queue);
+        
+        // Debug: Print all worker states when successfully getting a task
+        #ifdef PTO2_DEBUG_LOAD_BALANCE
+        {
+            int64_t my_clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[worker->worker_id]);
+            int32_t start_id, end_id;
+            if (worker->worker_type == PTO2_WORKER_CUBE) {
+                start_id = 0;
+                end_id = ctx->num_cube_workers;
+            } else {
+                start_id = ctx->num_cube_workers;
+                end_id = ctx->num_cube_workers + ctx->num_vector_workers;
+            }
+            
+            fprintf(stderr, "\n[TASK_GET] Worker %d (clock=%ld) got task %d\n",
+                    worker->worker_id, (long)my_clock, task_id);
+            fprintf(stderr, "  All %s workers:\n", 
+                    worker->worker_type == PTO2_WORKER_CUBE ? "CUBE" : "VECTOR");
+            for (int32_t i = start_id; i < end_id; i++) {
+                int64_t clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+                bool waiting = __atomic_load_n(&ctx->worker_waiting[i], __ATOMIC_ACQUIRE);
+                const char* status = (i == worker->worker_id) ? "GOT_TASK" :
+                                     waiting ? "WAITING" : "BUSY";
+                fprintf(stderr, "    Worker %2d: clock=%7ld  %s%s\n", 
+                        i, (long)clock, status,
+                        (clock < my_clock) ? " <-- SMALLER CLOCK!" : "");
+            }
+        }
+        #endif
+        
+        // If queue still has tasks, wake up ALL waiting workers with smallest clock
+        if (!pto2_ready_queue_empty(queue)) {
+            int32_t start_id, end_id;
+            if (worker->worker_type == PTO2_WORKER_CUBE) {
+                start_id = 0;
+                end_id = ctx->num_cube_workers;
+            } else {
+                start_id = ctx->num_cube_workers;
+                end_id = ctx->num_cube_workers + ctx->num_vector_workers;
+            }
+            
+            // Find minimum clock among waiting workers
+            int64_t min_clock = INT64_MAX;
+            for (int32_t i = start_id; i < end_id; i++) {
+                if (__atomic_load_n(&ctx->worker_waiting[i], __ATOMIC_ACQUIRE)) {
+                    int64_t clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+                    if (clock < min_clock) {
+                        min_clock = clock;
+                    }
+                }
+            }
+            // Signal ALL waiting workers with min clock
+            if (min_clock < INT64_MAX) {
+                for (int32_t i = start_id; i < end_id; i++) {
+                    if (__atomic_load_n(&ctx->worker_waiting[i], __ATOMIC_ACQUIRE)) {
+                        int64_t clock = PTO2_LOAD_ACQUIRE(&ctx->worker_current_cycle[i]);
+                        if (clock == min_clock) {
+                            pthread_cond_signal(&ctx->worker_cond[i]);
+                        }
+                    }
+                }
+            }
+        }
+        
+        pthread_mutex_unlock(mutex);
+        return task_id;
+    }
+    
+    return -1;
 }
 
 int32_t pto2_worker_try_get_task(PTO2WorkerContext* worker) {
@@ -255,10 +421,23 @@ void pto2_worker_task_complete(PTO2WorkerContext* worker, int32_t task_id,
     PTO2RuntimeThreaded* rt = (PTO2RuntimeThreaded*)worker->runtime;
     PTO2ThreadContext* ctx = &rt->thread_ctx;
     
-    // Push completion to queue
-    pto2_completion_queue_push(&ctx->completion_queue,
-                                task_id, worker->worker_id,
-                                start_cycle, end_cycle);
+    // Push completion to queue (retry if full)
+    int retry_count = 0;
+    while (!pto2_completion_queue_push(&ctx->completion_queue,
+                                        task_id, worker->worker_id,
+                                        start_cycle, end_cycle)) {
+        // Queue is full - signal scheduler and wait briefly
+        pthread_mutex_lock(&ctx->done_mutex);
+        pthread_cond_signal(&ctx->completion_cond);
+        pthread_mutex_unlock(&ctx->done_mutex);
+        
+        retry_count++;
+        if (retry_count % 1000 == 0) {
+            fprintf(stderr, "[Worker %d] Completion queue full, retrying (%d)...\n",
+                    worker->worker_id, retry_count);
+        }
+        PTO2_SPIN_PAUSE();
+    }
     
     // Signal completion condition
     pthread_mutex_lock(&ctx->done_mutex);
@@ -272,6 +451,14 @@ void pto2_worker_task_complete(PTO2WorkerContext* worker, int32_t task_id,
 
 void* pto2_worker_thread_func(void* arg) {
     PTO2WorkerContext* worker = (PTO2WorkerContext*)arg;
+    PTO2RuntimeThreaded* rt = (PTO2RuntimeThreaded*)worker->runtime;
+    PTO2ThreadContext* ctx = &rt->thread_ctx;
+    
+    // Signal that this worker is ready
+    pthread_mutex_lock(&ctx->startup_mutex);
+    ctx->workers_ready++;
+    pthread_cond_broadcast(&ctx->startup_cond);
+    pthread_mutex_unlock(&ctx->startup_mutex);
     
     while (!worker->shutdown) {
         // Get next task (blocks if queue empty)
@@ -296,8 +483,15 @@ void* pto2_worker_thread_func_sim(void* arg) {
     PTO2RuntimeThreaded* rt = (PTO2RuntimeThreaded*)worker->runtime;
     PTO2ThreadContext* ctx = &rt->thread_ctx;
     
+    // Signal that this worker is ready
+    pthread_mutex_lock(&ctx->startup_mutex);
+    ctx->workers_ready++;
+    pthread_cond_broadcast(&ctx->startup_cond);
+    pthread_mutex_unlock(&ctx->startup_mutex);
+    
     while (!worker->shutdown) {
         // Get next task (blocks if queue empty)
+        // Clock-based load balancing is now inside pto2_worker_get_task
         int32_t task_id = pto2_worker_get_task(worker);
         if (task_id < 0) {
             // Shutdown or error
@@ -319,7 +513,8 @@ void* pto2_worker_thread_func_sim(void* arg) {
             if (!entry) break;
             
             int32_t dep_task_id = entry->task_id;
-            int32_t dep_slot = PTO2_TASK_SLOT(dep_task_id);
+            int32_t window_mask = rt->base.scheduler.task_window_mask;
+            int32_t dep_slot = dep_task_id & window_mask;
             if (dep_slot >= 0 && dep_slot < ctx->task_end_cycles_capacity) {
                 int64_t dep_end = ctx->task_end_cycles[dep_slot];
                 if (dep_end > earliest_start) {
@@ -345,22 +540,29 @@ void* pto2_worker_thread_func_sim(void* arg) {
         
         int64_t end_cycle = start_cycle + cycles;
         
+        // IMPORTANT: Update worker's clock IMMEDIATELY after calculating end_cycle
+        // This allows other workers to see the correct expected end time
+        // and avoid taking tasks that should go to workers with smaller clocks
+        PTO2_STORE_RELEASE(&ctx->worker_current_cycle[worker->worker_id], end_cycle);
+        
         // Update task end cycle for dependency tracking
-        int32_t slot = PTO2_TASK_SLOT(task_id);
+        int32_t window_mask = rt->base.scheduler.task_window_mask;
+        int32_t slot = task_id & window_mask;
         pthread_mutex_lock(&ctx->task_end_mutex);
         if (slot >= 0 && slot < ctx->task_end_cycles_capacity) {
             ctx->task_end_cycles[slot] = end_cycle;
         }
         pthread_mutex_unlock(&ctx->task_end_mutex);
         
-        // Update worker's current cycle
-        PTO2_STORE_RELEASE(&ctx->worker_current_cycle[worker->worker_id], end_cycle);
-        
         // Track stall cycles
         int64_t stall_cycles = start_cycle - worker_free_cycle;
         if (stall_cycles > 0) {
             worker->total_stall_cycles += stall_cycles;
         }
+        
+        // Record trace event
+        pto2_runtime_record_trace(rt, task_id, worker->worker_id, 
+                                   start_cycle, end_cycle, task->func_name);
         
         // Signal completion with actual timing
         pto2_worker_task_complete(worker, task_id, start_cycle, end_cycle);

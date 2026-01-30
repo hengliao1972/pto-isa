@@ -20,7 +20,7 @@
 // =============================================================================
 
 static bool thread_ctx_init(PTO2ThreadContext* ctx, int32_t num_cube_workers,
-                            int32_t num_vector_workers) {
+                            int32_t num_vector_workers, int32_t task_window_size) {
     memset(ctx, 0, sizeof(PTO2ThreadContext));
     
     ctx->num_cube_workers = num_cube_workers;
@@ -53,8 +53,8 @@ static bool thread_ctx_init(PTO2ThreadContext* ctx, int32_t num_cube_workers,
         }
     }
     
-    // Initialize completion queue
-    int32_t completion_capacity = PTO2_TASK_WINDOW_SIZE * 2;
+    // Initialize completion queue (same size as ready queue to avoid bottleneck)
+    int32_t completion_capacity = PTO2_READY_QUEUE_SIZE;
     if (!pto2_completion_queue_init(&ctx->completion_queue, completion_capacity)) {
         for (int i = 0; i < PTO2_NUM_WORKER_TYPES; i++) {
             pthread_mutex_destroy(&ctx->ready_mutex[i]);
@@ -98,8 +98,8 @@ static bool thread_ctx_init(PTO2ThreadContext* ctx, int32_t num_cube_workers,
     ctx->all_done = false;
     ctx->global_cycle = 0;
     
-    // Initialize task end cycles tracking for simulation
-    ctx->task_end_cycles_capacity = PTO2_TASK_WINDOW_SIZE;
+    // Initialize task end cycles tracking for simulation (dynamically sized)
+    ctx->task_end_cycles_capacity = task_window_size;
     ctx->task_end_cycles = (volatile int64_t*)calloc(ctx->task_end_cycles_capacity, 
                                                       sizeof(int64_t));
     if (!ctx->task_end_cycles) {
@@ -144,6 +144,66 @@ static bool thread_ctx_init(PTO2ThreadContext* ctx, int32_t num_cube_workers,
         return false;
     }
     
+    // Initialize startup synchronization
+    if (pthread_mutex_init(&ctx->startup_mutex, NULL) != 0) {
+        free((void*)ctx->worker_current_cycle);
+        pthread_mutex_destroy(&ctx->task_end_mutex);
+        free((void*)ctx->task_end_cycles);
+        pthread_cond_destroy(&ctx->completion_cond);
+        pthread_cond_destroy(&ctx->all_done_cond);
+        pthread_mutex_destroy(&ctx->done_mutex);
+        pto2_completion_queue_destroy(&ctx->completion_queue);
+        for (int i = 0; i < PTO2_NUM_WORKER_TYPES; i++) {
+            pthread_mutex_destroy(&ctx->ready_mutex[i]);
+            pthread_cond_destroy(&ctx->ready_cond[i]);
+        }
+        return false;
+    }
+    
+    if (pthread_cond_init(&ctx->startup_cond, NULL) != 0) {
+        pthread_mutex_destroy(&ctx->startup_mutex);
+        free((void*)ctx->worker_current_cycle);
+        pthread_mutex_destroy(&ctx->task_end_mutex);
+        free((void*)ctx->task_end_cycles);
+        pthread_cond_destroy(&ctx->completion_cond);
+        pthread_cond_destroy(&ctx->all_done_cond);
+        pthread_mutex_destroy(&ctx->done_mutex);
+        pto2_completion_queue_destroy(&ctx->completion_queue);
+        for (int i = 0; i < PTO2_NUM_WORKER_TYPES; i++) {
+            pthread_mutex_destroy(&ctx->ready_mutex[i]);
+            pthread_cond_destroy(&ctx->ready_cond[i]);
+        }
+        return false;
+    }
+    
+    ctx->workers_ready = 0;
+    ctx->scheduler_ready = false;
+    
+    // Initialize per-worker condition variables for selective wakeup
+    for (int i = 0; i < ctx->num_workers; i++) {
+        if (pthread_cond_init(&ctx->worker_cond[i], NULL) != 0) {
+            // Cleanup on failure
+            for (int j = 0; j < i; j++) {
+                pthread_cond_destroy(&ctx->worker_cond[j]);
+            }
+            pthread_cond_destroy(&ctx->startup_cond);
+            pthread_mutex_destroy(&ctx->startup_mutex);
+            free((void*)ctx->worker_current_cycle);
+            pthread_mutex_destroy(&ctx->task_end_mutex);
+            free((void*)ctx->task_end_cycles);
+            pthread_cond_destroy(&ctx->completion_cond);
+            pthread_cond_destroy(&ctx->all_done_cond);
+            pthread_mutex_destroy(&ctx->done_mutex);
+            pto2_completion_queue_destroy(&ctx->completion_queue);
+            for (int j = 0; j < PTO2_NUM_WORKER_TYPES; j++) {
+                pthread_mutex_destroy(&ctx->ready_mutex[j]);
+                pthread_cond_destroy(&ctx->ready_cond[j]);
+            }
+            return false;
+        }
+        ctx->worker_waiting[i] = false;
+    }
+    
     return true;
 }
 
@@ -159,6 +219,11 @@ static void thread_ctx_destroy(PTO2ThreadContext* ctx) {
         pthread_cond_destroy(&ctx->ready_cond[i]);
     }
     
+    // Destroy per-worker condition variables
+    for (int i = 0; i < ctx->num_workers; i++) {
+        pthread_cond_destroy(&ctx->worker_cond[i]);
+    }
+    
     // Free simulation tracking arrays
     if (ctx->task_end_cycles) {
         free((void*)ctx->task_end_cycles);
@@ -170,6 +235,10 @@ static void thread_ctx_destroy(PTO2ThreadContext* ctx) {
         free((void*)ctx->worker_current_cycle);
         ctx->worker_current_cycle = NULL;
     }
+    
+    // Destroy startup synchronization
+    pthread_cond_destroy(&ctx->startup_cond);
+    pthread_mutex_destroy(&ctx->startup_mutex);
 }
 
 static void thread_ctx_reset(PTO2ThreadContext* ctx) {
@@ -178,6 +247,10 @@ static void thread_ctx_reset(PTO2ThreadContext* ctx) {
     ctx->orchestrator_done = false;
     ctx->scheduler_running = false;
     ctx->global_cycle = 0;
+    
+    // Reset startup synchronization
+    ctx->workers_ready = 0;
+    ctx->scheduler_ready = false;
     
     // Reset completion queue (drain it)
     PTO2CompletionEntry entry;
@@ -216,6 +289,13 @@ PTO2RuntimeThreaded* pto2_runtime_create_threaded_custom(int32_t num_cube_worker
                                                           int32_t task_window_size,
                                                           int32_t heap_size,
                                                           int32_t dep_list_size) {
+    // Ensure task_window_size is a power of 2 (for fast modulo)
+    if (task_window_size <= 0 || (task_window_size & (task_window_size - 1)) != 0) {
+        fprintf(stderr, "ERROR: task_window_size (%d) must be a positive power of 2\n",
+                task_window_size);
+        return NULL;
+    }
+    
     // Allocate threaded runtime
     PTO2RuntimeThreaded* rt = (PTO2RuntimeThreaded*)calloc(1, sizeof(PTO2RuntimeThreaded));
     if (!rt) {
@@ -278,8 +358,8 @@ PTO2RuntimeThreaded* pto2_runtime_create_threaded_custom(int32_t num_cube_worker
     rt->base.mode = mode;
     rt->simulation_mode = simulation_mode;
     
-    // Initialize thread context
-    if (!thread_ctx_init(&rt->thread_ctx, num_cube_workers, num_vector_workers)) {
+    // Initialize thread context (pass task_window_size for dynamic allocation)
+    if (!thread_ctx_init(&rt->thread_ctx, num_cube_workers, num_vector_workers, task_window_size)) {
         pto2_scheduler_destroy(&rt->base.scheduler);
         pto2_orchestrator_destroy(&rt->base.orchestrator);
         free(rt->base.gm_heap);
@@ -313,6 +393,13 @@ PTO2RuntimeThreaded* pto2_runtime_create_threaded_custom(int32_t num_cube_worker
     // Setup orchestrator context
     rt->orch_ctx.runtime = (PTO2Runtime*)rt;
     
+    // Initialize trace recording
+    rt->trace_enabled = true;  // Enable by default for simulation
+    rt->trace_filename = NULL;
+    rt->trace_events = (PTO2TraceEvent*)calloc(PTO2_MAX_TRACE_EVENTS, sizeof(PTO2TraceEvent));
+    rt->trace_count = 0;
+    pthread_mutex_init(&rt->trace_mutex, NULL);
+    
     return rt;
 }
 
@@ -326,6 +413,13 @@ void pto2_runtime_destroy_threaded(PTO2RuntimeThreaded* rt) {
     for (int i = 0; i < rt->thread_ctx.num_workers; i++) {
         pto2_worker_destroy(&rt->thread_ctx.workers[i]);
     }
+    
+    // Destroy trace resources
+    if (rt->trace_events) {
+        free(rt->trace_events);
+        rt->trace_events = NULL;
+    }
+    pthread_mutex_destroy(&rt->trace_mutex);
     
     // Destroy thread context
     thread_ctx_destroy(&rt->thread_ctx);
@@ -390,7 +484,13 @@ static void* orchestrator_thread_entry(void* arg) {
 void pto2_runtime_start_threads(PTO2RuntimeThreaded* rt) {
     PTO2ThreadContext* ctx = &rt->thread_ctx;
     
-    // Start worker threads
+    // Reset startup synchronization state
+    pthread_mutex_lock(&ctx->startup_mutex);
+    ctx->workers_ready = 0;
+    ctx->scheduler_ready = false;
+    pthread_mutex_unlock(&ctx->startup_mutex);
+    
+    // === STEP 1: Start worker threads first ===
     for (int i = 0; i < ctx->num_workers; i++) {
         PTO2WorkerContext* worker = &ctx->workers[i];
         worker->shutdown = false;
@@ -403,13 +503,24 @@ void pto2_runtime_start_threads(PTO2RuntimeThreaded* rt) {
         }
     }
     
-    // Start scheduler thread
+    // === STEP 2: Start scheduler thread (it will wait for workers) ===
     ctx->scheduler_running = true;
     if (pthread_create(&ctx->scheduler_thread, NULL,
                        pto2_scheduler_thread_func, &rt->sched_ctx) != 0) {
         fprintf(stderr, "Failed to create scheduler thread\n");
         ctx->scheduler_running = false;
+        return;
     }
+    
+    // === STEP 3: Wait for all workers and scheduler to be ready ===
+    // This ensures orchestrator only starts after worker + scheduler are ready
+    pthread_mutex_lock(&ctx->startup_mutex);
+    while (!ctx->scheduler_ready) {
+        pthread_cond_wait(&ctx->startup_cond, &ctx->startup_mutex);
+    }
+    pthread_mutex_unlock(&ctx->startup_mutex);
+    
+    // All threads are now ready - safe to start orchestration
 }
 
 void pto2_runtime_stop_threads(PTO2RuntimeThreaded* rt) {
@@ -426,11 +537,19 @@ void pto2_runtime_stop_threads(PTO2RuntimeThreaded* rt) {
     }
     ctx->shutdown = true;
     
-    // Wake up all workers waiting on ready queues
+    // Wake up all workers waiting on ready queues (both shared and per-worker conds)
     for (int i = 0; i < PTO2_NUM_WORKER_TYPES; i++) {
         pthread_mutex_lock(&ctx->ready_mutex[i]);
         pthread_cond_broadcast(&ctx->ready_cond[i]);
         pthread_mutex_unlock(&ctx->ready_mutex[i]);
+    }
+    
+    // Wake up all per-worker condition variables
+    for (int i = 0; i < ctx->num_workers; i++) {
+        PTO2WorkerType type = ctx->workers[i].worker_type;
+        pthread_mutex_lock(&ctx->ready_mutex[type]);
+        pthread_cond_signal(&ctx->worker_cond[i]);
+        pthread_mutex_unlock(&ctx->ready_mutex[type]);
     }
     
     // Wake up scheduler
@@ -540,6 +659,26 @@ void pto2_runtime_enable_trace(PTO2RuntimeThreaded* rt, const char* filename) {
     rt->trace_filename = filename;
 }
 
+void pto2_runtime_record_trace(PTO2RuntimeThreaded* rt, int32_t task_id,
+                                int32_t worker_id, int64_t start_cycle,
+                                int64_t end_cycle, const char* func_name) {
+    if (!rt->trace_enabled || !rt->trace_events) return;
+    
+    pthread_mutex_lock(&rt->trace_mutex);
+    
+    if (rt->trace_count < PTO2_MAX_TRACE_EVENTS) {
+        PTO2TraceEvent* e = &rt->trace_events[rt->trace_count];
+        e->task_id = task_id;
+        e->worker_id = worker_id;
+        e->start_cycle = start_cycle;
+        e->end_cycle = end_cycle;
+        e->func_name = func_name;
+        rt->trace_count++;
+    }
+    
+    pthread_mutex_unlock(&rt->trace_mutex);
+}
+
 void pto2_runtime_write_trace(PTO2RuntimeThreaded* rt, const char* filename) {
     FILE* f = fopen(filename, "w");
     if (!f) {
@@ -566,16 +705,32 @@ void pto2_runtime_write_trace(PTO2RuntimeThreaded* rt, const char* filename) {
         tid++;
     }
     
-    // Note: In a full implementation, we would record task execution times
-    // during runtime and write them here. For now, we write a placeholder.
-    fprintf(f, "  {\"name\": \"placeholder\", \"cat\": \"info\", \"ph\": \"i\", "
-            "\"pid\": 0, \"tid\": 0, \"ts\": 0, \"s\": \"g\", "
-            "\"args\": {\"note\": \"Task events would be recorded here\"}}\n");
+    // Write task trace events
+    for (int32_t i = 0; i < rt->trace_count; i++) {
+        PTO2TraceEvent* e = &rt->trace_events[i];
+        const char* name = e->func_name ? e->func_name : "task";
+        
+        // Convert cycles to microseconds for Perfetto display
+        // Scale: 1 cycle = 1000 microseconds for better visibility
+        int64_t ts_us = e->start_cycle * 1000;
+        int64_t dur_us = (e->end_cycle - e->start_cycle) * 1000;
+        
+        fprintf(f, "  {\"name\": \"%s\", \"cat\": \"task\", \"ph\": \"X\", "
+                "\"pid\": 0, \"tid\": %d, \"ts\": %lld, \"dur\": %lld, "
+                "\"args\": {\"task_id\": %d}}",
+                name, e->worker_id, (long long)ts_us, (long long)dur_us, e->task_id);
+        
+        if (i < rt->trace_count - 1) {
+            fprintf(f, ",\n");
+        } else {
+            fprintf(f, "\n");
+        }
+    }
     
     fprintf(f, "]\n");
     fclose(f);
     
-    printf("Trace written to: %s\n", filename);
+    printf("Trace written to: %s (%d events)\n", filename, rt->trace_count);
 }
 
 // =============================================================================

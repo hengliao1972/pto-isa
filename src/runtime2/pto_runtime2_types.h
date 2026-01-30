@@ -23,14 +23,20 @@
 // =============================================================================
 
 // Task management
-#define PTO2_TASK_WINDOW_SIZE     1024    // Power of 2 for efficient modulo
+// NOTE: PTO2_TASK_WINDOW_SIZE is now the DEFAULT value only.
+// Actual window size is passed at runtime to pto2_runtime_create_threaded_custom().
+// Use pto2_task_slot(sched, task_id) instead of PTO2_TASK_SLOT macro.
+#define PTO2_TASK_WINDOW_SIZE     16384   // Default task window size (power of 2)
+
+// DEPRECATED: Use pto2_task_slot(sched, task_id) instead
+// This macro only works when runtime window == PTO2_TASK_WINDOW_SIZE
 #define PTO2_TASK_SLOT(task_id)   ((task_id) & (PTO2_TASK_WINDOW_SIZE - 1))
 
 // Memory pools
 #define PTO2_HEAP_SIZE            (64 * 1024 * 1024)  // 64MB default heap
-#define PTO2_DEP_LIST_POOL_SIZE   8192    // Dependency list pool entries
-#define PTO2_TENSORMAP_POOL_SIZE  4096    // TensorMap entry pool
-#define PTO2_TENSORMAP_NUM_BUCKETS 1024   // Power of 2 for fast hash
+#define PTO2_DEP_LIST_POOL_SIZE   65536   // Dependency list pool entries
+#define PTO2_TENSORMAP_POOL_SIZE  32768   // TensorMap entry pool
+#define PTO2_TENSORMAP_NUM_BUCKETS 4096   // Power of 2 for fast hash
 
 // Task parameters
 #define PTO2_MAX_OUTPUTS          16      // Maximum outputs per task
@@ -41,7 +47,7 @@
 #define PTO2_MAX_SCOPE_DEPTH      64      // Maximum nesting depth
 
 // Ready queue
-#define PTO2_READY_QUEUE_SIZE     4096    // Per-worker-type queue size
+#define PTO2_READY_QUEUE_SIZE     65536   // Per-worker-type queue size (16x larger to avoid queue full)
 
 // Memory alignment
 #define PTO2_ALIGN_SIZE           64      // Cache line alignment
@@ -89,7 +95,7 @@ typedef enum {
 } PTO2TaskState;
 
 // =============================================================================
-// Tensor Region
+// Tensor Region (Legacy, for simple 1D regions)
 // =============================================================================
 
 /**
@@ -102,6 +108,87 @@ typedef struct {
     int32_t  offset;          // Byte offset within tile
     int32_t  size;            // Region size in bytes
 } PTO2TensorRegion;
+
+// =============================================================================
+// Logical Tensor (for view/reshape/transpose operations)
+// =============================================================================
+
+/**
+ * Maximum dimensions supported for logical tensors
+ */
+#define PTO2_MAX_TENSOR_DIM   8
+
+/**
+ * Tensor extraction type (for tracking how tensor was created)
+ */
+typedef enum {
+    PTO2_TENSOR_RAW = 0,           // Original raw tensor (owns storage)
+    PTO2_TENSOR_VIEW = 1,          // view() - subset selection, shared storage
+    PTO2_TENSOR_RESHAPE = 2,       // reshape() - shape change, shared storage
+    PTO2_TENSOR_TRANSPOSE = 3,     // transpose() - dimension permute, shared storage
+    PTO2_TENSOR_DEEP_VIEW = 4,     // deep_view() - copied subset, new storage
+    PTO2_TENSOR_DEEP_RESHAPE = 5,  // deep_reshape() - copied reshape, new storage
+    PTO2_TENSOR_DEEP_TRANSPOSE = 6 // deep_transpose() - copied transpose, new storage
+} PTO2TensorExtractionType;
+
+/**
+ * Raw tensor (storage provider)
+ * 
+ * The raw tensor owns the actual memory allocation.
+ * Multiple logical tensors can share the same raw tensor (aliasing).
+ */
+typedef struct {
+    void*    base_ptr;        // Base pointer of allocated memory
+    int64_t  total_size;      // Total size in bytes
+    int32_t  refcount;        // Number of logical tensors referencing this storage
+                              // (for memory management, 0 = can be freed)
+} PTO2RawTensor;
+
+/**
+ * Logical tensor structure
+ * 
+ * A "view" into raw tensor storage with specific layout.
+ * Supports multi-dimensional tensors with strides (for view/reshape/transpose).
+ * 
+ * Memory footprint is determined by:
+ *   - storage_offset: byte offset from raw_base to first element
+ *   - shape[d]: number of elements in dimension d
+ *   - strides[d]: byte offset between consecutive elements in dimension d
+ * 
+ * For element at indices [i0, i1, ..., i_{n-1}]:
+ *   byte_offset = storage_offset + sum(i_d * strides[d])
+ * 
+ * Examples:
+ *   - Contiguous row-major (3,4): shape=[3,4], strides=[4*elem_size, elem_size]
+ *   - Transposed (4,3): shape=[4,3], strides=[elem_size, 4*elem_size]
+ *   - Sliced [1:3, 1:3]: offset adjusted, shape=[2,2], strides unchanged
+ */
+typedef struct {
+    // === Raw tensor reference (shared storage) ===
+    void*    raw_base;            // Pointer to raw tensor's base (for aliasing check)
+    int64_t  raw_total_size;      // Total size of raw tensor in bytes
+    
+    // === Storage offset ===
+    int64_t  storage_offset;      // Byte offset from raw_base to first element
+    
+    // === Shape and strides ===
+    int64_t  shape[PTO2_MAX_TENSOR_DIM];    // Size in each dimension
+    int64_t  strides[PTO2_MAX_TENSOR_DIM];  // Byte stride in each dimension
+    int32_t  ndim;                          // Number of dimensions (0 = scalar)
+    
+    // === Precomputed bounding box (for fast overlap detection) ===
+    int64_t  min_byte_offset;     // First byte accessed (relative to raw_base)
+    int64_t  max_byte_offset;     // Last byte accessed (relative to raw_base)
+    
+    // === Element info ===
+    int64_t  elem_size;           // Size of each element in bytes
+    int64_t  numel;               // Total number of elements
+    
+    // === Extraction tracking ===
+    PTO2TensorExtractionType extraction_type;  // How this tensor was created
+    bool     is_contiguous;       // True if memory is contiguous (no gaps)
+    
+} PTO2LogicalTensor;
 
 // =============================================================================
 // Task Parameter
@@ -211,13 +298,52 @@ typedef struct {
  * - When lookup hits stale entry, truncate rest of chain
  */
 typedef struct {
-    PTO2TensorRegion region;      // Tensor region key
+    PTO2TensorRegion region;      // Tensor region key (legacy, for simple 1D)
     int32_t producer_task_id;     // Task that produces this region
     int32_t next_in_bucket;       // Offset to next entry in hash bucket (-1 = end)
     int32_t next_in_task;         // Offset to next entry for same task (-1 = end)
     bool    in_bucket;            // True if entry is linked in a bucket chain
                                   // CRITICAL: Must be set false before overwriting!
 } PTO2TensorMapEntry;
+
+/**
+ * Extended TensorMap entry structure (for LogicalTensor support)
+ * 
+ * Supports multi-dimensional tensors with view/reshape/transpose operations.
+ * Uses bounding box for fast overlap detection.
+ * 
+ * Hash strategy: 
+ *   - Primary key: raw_base (groups all views of same storage)
+ *   - Within bucket: check bounding box overlap
+ */
+typedef struct {
+    // === Raw tensor identification (for grouping into same bucket) ===
+    void*    raw_base;            // Base pointer of raw tensor storage
+    int64_t  raw_total_size;      // Total size of raw tensor (for validation)
+    
+    // === Bounding box (precomputed for fast overlap check) ===
+    // Overlap if: (A.min <= B.max) && (B.min <= A.max)
+    int64_t  min_byte_offset;     // First byte accessed (relative to raw_base)
+    int64_t  max_byte_offset;     // Last byte accessed (relative to raw_base)
+    
+    // === Full logical tensor info (for GCD-based exact check, optional) ===
+    int64_t  storage_offset;      // Byte offset from raw_base
+    int64_t  shape[PTO2_MAX_TENSOR_DIM];    // Shape in each dimension
+    int64_t  strides[PTO2_MAX_TENSOR_DIM];  // Strides in each dimension
+    int32_t  ndim;                // Number of dimensions
+    
+    // === Producer tracking ===
+    int32_t  producer_task_id;    // Task that produces this tensor
+    
+    // === Chain links ===
+    int32_t  next_in_bucket;      // Offset to next entry in hash bucket (-1 = end)
+    int32_t  next_in_task;        // Offset to next entry for same task (-1 = end)
+    bool     in_bucket;           // True if entry is linked in a bucket chain
+    
+    // === Flags ===
+    bool     is_deep_copy;        // True if this is a deep copy (independent storage)
+    
+} PTO2TensorMapEntryEx;
 
 // =============================================================================
 // Cycle Cost Function Type
@@ -375,6 +501,11 @@ typedef struct {
     pthread_mutex_t ready_mutex[PTO2_NUM_WORKER_TYPES];
     pthread_cond_t  ready_cond[PTO2_NUM_WORKER_TYPES];
     
+    // Per-worker condition variables for selective wakeup
+    // Only the worker with smallest clock gets signaled
+    pthread_cond_t  worker_cond[PTO2_MAX_WORKERS];
+    volatile bool   worker_waiting[PTO2_MAX_WORKERS];  // Track which workers are waiting
+    
     // Completion queue (workers -> scheduler)
     PTO2CompletionQueue completion_queue;
     pthread_cond_t completion_cond;   // Signal scheduler when completions ready
@@ -398,6 +529,13 @@ typedef struct {
     
     // Per-worker current cycle (for proper scheduling)
     volatile int64_t* worker_current_cycle;
+    
+    // Thread startup synchronization
+    // Ensures: workers start first, then scheduler, then orchestrator begins work
+    pthread_mutex_t startup_mutex;
+    pthread_cond_t  startup_cond;
+    volatile int32_t workers_ready;        // Count of workers that have started
+    volatile bool    scheduler_ready;      // Scheduler has started
     
 } PTO2ThreadContext;
 

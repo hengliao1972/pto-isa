@@ -34,3 +34,18 @@ kernels/
 
 # Extracted `ptoas` binaries (generated from the per-platform tarballs).
 bin/*/ptoas
+
+# Compiled objects and libraries
+*.o
+*.a
+*.log
+
+# Debug test binaries (keep .c source files)
+src/runtime2/tests/debug*
+!src/runtime2/tests/debug*.c
+src/runtime2/tests/test_*
+!src/runtime2/tests/test_*.c
+src/runtime2/tests/quick_test
+
+# Trace and benchmark output files in runtime2
+src/runtime2/*.json

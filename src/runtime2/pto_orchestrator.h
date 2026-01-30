@@ -231,9 +231,11 @@ void pto2_orchestrator_sync_tensormap(PTO2OrchestratorState* orch);
 
 /**
  * Add consumer to producer's fanout list (with spinlock)
+ * Also checks if producer has already completed and updates consumer's fanin_refcount
  */
 void pto2_add_consumer_to_producer(PTO2OrchestratorState* orch,
                                     PTO2TaskDescriptor* producer,
+                                    int32_t producer_id,
                                     int32_t consumer_id);
 
 /**

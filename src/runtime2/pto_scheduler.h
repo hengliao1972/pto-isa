@@ -56,12 +56,20 @@ typedef struct PTO2SchedulerState {
     int32_t last_task_alive;      // Task ring tail
     int32_t heap_tail;            // Heap ring tail
     
+    // === DYNAMIC CONFIGURATION ===
+    int32_t task_window_size;     // Task window size (power of 2)
+    int32_t task_window_mask;     // task_window_size - 1 (for fast modulo)
+    
     // === PRIVATE DATA (not in shared memory) ===
     
-    // Per-task state arrays (indexed by task_id % TASK_WINDOW_SIZE)
+    // Per-task state arrays (dynamically allocated, indexed by task_id & task_window_mask)
     PTO2TaskState* task_state;        // PENDING/READY/RUNNING/COMPLETED/CONSUMED
     int32_t* fanin_refcount;          // Dynamic: counts completed producers
     int32_t* fanout_refcount;         // Dynamic: counts released references
+    
+    // Per-slot locks for synchronization between orchestrator (fanin/fanout setup)
+    // and scheduler (task completion handling)
+    volatile int32_t* slot_locks;     // Spinlock per slot (0=unlocked, 1=locked)
     
     // Ready queues (one per worker type)
     PTO2ReadyQueue ready_queues[PTO2_NUM_WORKER_TYPES];
@@ -75,6 +83,35 @@ typedef struct PTO2SchedulerState {
     int64_t total_dispatch_cycles;
     
 } PTO2SchedulerState;
+
+/**
+ * Calculate task slot from task_id (replaces PTO2_TASK_SLOT macro)
+ * Uses runtime window_size instead of compile-time constant
+ */
+static inline int32_t pto2_task_slot(PTO2SchedulerState* sched, int32_t task_id) {
+    return task_id & sched->task_window_mask;
+}
+
+/**
+ * Lock a task slot (spinlock)
+ * Used to synchronize between orchestrator (fanin/fanout setup) and scheduler (task completion)
+ */
+static inline void pto2_slot_lock(PTO2SchedulerState* sched, int32_t slot) {
+    while (__atomic_exchange_n(&sched->slot_locks[slot], 1, __ATOMIC_ACQUIRE) != 0) {
+        // Spin until we acquire the lock
+        while (__atomic_load_n(&sched->slot_locks[slot], __ATOMIC_RELAXED) != 0) {
+            // Reduce contention by waiting for unlock before trying again
+            PTO2_SPIN_PAUSE();
+        }
+    }
+}
+
+/**
+ * Unlock a task slot
+ */
+static inline void pto2_slot_unlock(PTO2SchedulerState* sched, int32_t slot) {
+    __atomic_store_n(&sched->slot_locks[slot], 0, __ATOMIC_RELEASE);
+}
 
 // =============================================================================
 // Scheduler API
@@ -172,6 +209,17 @@ bool pto2_ready_queue_push_threadsafe(PTO2ReadyQueue* queue, int32_t task_id,
                                        pthread_mutex_t* mutex, pthread_cond_t* cond);
 
 /**
+ * Push task to ready queue and wake only the worker with smallest simulated clock
+ * This ensures workers with smaller clocks (less work done) get priority
+ */
+bool pto2_ready_queue_push_wake_min_clock(PTO2ReadyQueue* queue, int32_t task_id,
+                                           pthread_mutex_t* mutex,
+                                           volatile int64_t* worker_clocks,
+                                           volatile bool* worker_waiting,
+                                           pthread_cond_t* worker_conds,
+                                           int32_t worker_start, int32_t worker_end);
+
+/**
  * Pop task from ready queue with thread synchronization
  * Blocks if queue is empty until task available or shutdown
  * 
@@ -184,6 +232,17 @@ bool pto2_ready_queue_push_threadsafe(PTO2ReadyQueue* queue, int32_t task_id,
 int32_t pto2_ready_queue_pop_threadsafe(PTO2ReadyQueue* queue,
                                          pthread_mutex_t* mutex, pthread_cond_t* cond,
                                          volatile bool* shutdown);
+
+/**
+ * Pop task from ready queue with yield check callback
+ * After wakeup from cond_wait, calls should_yield callback.
+ * If should_yield returns true, broadcasts to wake other workers and waits again.
+ * This ensures workers with smaller simulated clocks get priority.
+ */
+int32_t pto2_ready_queue_pop_with_yield_check(PTO2ReadyQueue* queue,
+                                               pthread_mutex_t* mutex, pthread_cond_t* cond,
+                                               volatile bool* shutdown,
+                                               bool (*should_yield)(void* ctx), void* yield_ctx);
 
 /**
  * Try to pop task from ready queue without blocking

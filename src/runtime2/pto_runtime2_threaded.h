@@ -19,6 +19,22 @@
 // =============================================================================
 
 /**
+ * Trace event for recording task execution
+ */
+typedef struct {
+    int32_t task_id;
+    int32_t worker_id;
+    int64_t start_cycle;
+    int64_t end_cycle;
+    const char* func_name;
+} PTO2TraceEvent;
+
+/**
+ * Maximum number of trace events
+ */
+#define PTO2_MAX_TRACE_EVENTS 65536
+
+/**
  * Extended runtime with thread context
  */
 typedef struct PTO2RuntimeThreaded {
@@ -35,6 +51,9 @@ typedef struct PTO2RuntimeThreaded {
     // Tracing
     bool trace_enabled;
     const char* trace_filename;
+    PTO2TraceEvent* trace_events;     // Array of trace events
+    volatile int32_t trace_count;     // Number of recorded events
+    pthread_mutex_t trace_mutex;      // Mutex for thread-safe trace recording
     
 } PTO2RuntimeThreaded;
 
@@ -143,6 +162,13 @@ bool pto2_runtime_threads_done(PTO2RuntimeThreaded* rt);
  * Enable tracing to file
  */
 void pto2_runtime_enable_trace(PTO2RuntimeThreaded* rt, const char* filename);
+
+/**
+ * Record a trace event (thread-safe)
+ */
+void pto2_runtime_record_trace(PTO2RuntimeThreaded* rt, int32_t task_id,
+                                int32_t worker_id, int64_t start_cycle,
+                                int64_t end_cycle, const char* func_name);
 
 /**
  * Write trace to file

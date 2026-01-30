@@ -187,8 +187,10 @@ void pto2_orchestrator_sync_tensormap(PTO2OrchestratorState* orch) {
 
 void pto2_add_consumer_to_producer(PTO2OrchestratorState* orch,
                                     PTO2TaskDescriptor* producer,
+                                    int32_t producer_id,
                                     int32_t consumer_id) {
     // Acquire per-task spinlock
+    // This synchronizes with scheduler's on_task_complete_threadsafe
     task_fanout_lock(producer);
     
     // Prepend consumer to producer's fanout list
@@ -196,6 +198,21 @@ void pto2_add_consumer_to_producer(PTO2OrchestratorState* orch,
                                                    producer->fanout_head,
                                                    consumer_id);
     producer->fanout_count++;
+    
+    // Check if producer has already completed
+    // If so, we need to update consumer's fanin_refcount directly
+    // because on_task_complete_threadsafe has already run and won't see this consumer
+    if (orch->scheduler) {
+        PTO2SchedulerState* sched = orch->scheduler;
+        int32_t prod_slot = pto2_task_slot(sched, producer_id);
+        int32_t prod_state = __atomic_load_n(&sched->task_state[prod_slot], __ATOMIC_ACQUIRE);
+        
+        if (prod_state >= PTO2_TASK_COMPLETED) {
+            // Producer already completed - update consumer's fanin_refcount directly
+            int32_t cons_slot = pto2_task_slot(sched, consumer_id);
+            __atomic_fetch_add(&sched->fanin_refcount[cons_slot], 1, __ATOMIC_SEQ_CST);
+        }
+    }
     
     // Release spinlock
     task_fanout_unlock(producer);
@@ -285,15 +302,26 @@ int32_t pto2_submit_task(PTO2OrchestratorState* orch,
                 int32_t producer_id = pto2_tensormap_lookup(&orch->tensor_map, &region);
                 
                 if (producer_id >= 0) {
-                    // Add to fanin list (this task depends on producer)
-                    if (fanin_count < PTO2_MAX_INPUTS) {
-                        fanin_temp[fanin_count++] = producer_id;
+                    // Check if this producer is already in fanin list (avoid duplicates)
+                    bool already_added = false;
+                    for (int j = 0; j < fanin_count; j++) {
+                        if (fanin_temp[j] == producer_id) {
+                            already_added = true;
+                            break;
+                        }
                     }
                     
-                    // Add this task to producer's fanout list (with spinlock)
-                    PTO2TaskDescriptor* producer = pto2_task_ring_get(
-                        &orch->task_ring, producer_id);
-                    pto2_add_consumer_to_producer(orch, producer, task_id);
+                    if (!already_added) {
+                        // Add to fanin list (this task depends on producer)
+                        if (fanin_count < PTO2_MAX_INPUTS) {
+                            fanin_temp[fanin_count++] = producer_id;
+                        }
+                        
+                        // Add this task to producer's fanout list (with spinlock)
+                        PTO2TaskDescriptor* producer = pto2_task_ring_get(
+                            &orch->task_ring, producer_id);
+                        pto2_add_consumer_to_producer(orch, producer, producer_id, task_id);
+                    }
                 }
                 task->num_inputs++;
                 break;
@@ -314,12 +342,23 @@ int32_t pto2_submit_task(PTO2OrchestratorState* orch,
                 // Handle as input (get dependency on previous writer)
                 int32_t producer_id = pto2_tensormap_lookup(&orch->tensor_map, &region);
                 if (producer_id >= 0) {
-                    if (fanin_count < PTO2_MAX_INPUTS) {
-                        fanin_temp[fanin_count++] = producer_id;
+                    // Check if this producer is already in fanin list (avoid duplicates)
+                    bool already_added = false;
+                    for (int j = 0; j < fanin_count; j++) {
+                        if (fanin_temp[j] == producer_id) {
+                            already_added = true;
+                            break;
+                        }
                     }
-                    PTO2TaskDescriptor* producer = pto2_task_ring_get(
-                        &orch->task_ring, producer_id);
-                    pto2_add_consumer_to_producer(orch, producer, task_id);
+                    
+                    if (!already_added) {
+                        if (fanin_count < PTO2_MAX_INPUTS) {
+                            fanin_temp[fanin_count++] = producer_id;
+                        }
+                        PTO2TaskDescriptor* producer = pto2_task_ring_get(
+                            &orch->task_ring, producer_id);
+                        pto2_add_consumer_to_producer(orch, producer, producer_id, task_id);
+                    }
                 }
                 task->num_inputs++;
                 
@@ -370,12 +409,14 @@ int32_t pto2_submit_task(PTO2OrchestratorState* orch,
     }
     
     // === STEP 5: Finalize fanin list ===
-    task->fanin_count = fanin_count;
+    // First build the fanin list
     for (int i = 0; i < fanin_count; i++) {
         task->fanin_head = pto2_dep_list_prepend(&orch->dep_pool,
                                                   task->fanin_head,
                                                   fanin_temp[i]);
     }
+    // Use release semantics to ensure fanin list is visible before fanin_count
+    __atomic_store_n(&task->fanin_count, fanin_count, __ATOMIC_RELEASE);
     
     // === STEP 6: Initialize task in scheduler ===
     // In multi-threaded mode, scheduler thread handles task initialization via polling

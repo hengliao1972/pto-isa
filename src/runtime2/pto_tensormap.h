@@ -34,6 +34,7 @@
 #define PTO_TENSORMAP_H
 
 #include "pto_runtime2_types.h"
+#include "pto_logical_tensor.h"
 
 // =============================================================================
 // TensorMap Structure
@@ -198,5 +199,156 @@ int32_t pto2_tensormap_valid_count(PTO2TensorMap* tm);
  * Get average bucket chain length
  */
 float pto2_tensormap_avg_chain_length(PTO2TensorMap* tm);
+
+// =============================================================================
+// Extended TensorMap (for LogicalTensor support)
+// =============================================================================
+
+/**
+ * Extended TensorMap structure
+ * 
+ * Supports multi-dimensional tensors with view/reshape/transpose operations.
+ * Uses PTO2TensorMapEntryEx for bounding box based overlap detection.
+ */
+typedef struct {
+    // Hash table buckets (fixed size, power of 2)
+    int32_t* buckets;             // Array of offsets into entry_pool (-1 = empty)
+    int32_t  num_buckets;         // Must be power of 2 for fast modulo
+    
+    // Entry pool as ring buffer
+    PTO2TensorMapEntryEx* entry_pool;   // Ring buffer of extended entries
+    int32_t pool_size;                   // Total pool capacity
+    int32_t pool_head;                   // Next allocation position (wraps around)
+    
+    // Per-task entry tracking (for efficient bucket cleanup)
+    int32_t* task_entry_head;     // Per-task head offset (-1 = no entries)
+                                  // Indexed by task_id % TASK_WINDOW_SIZE
+    
+    // Validity threshold (for lazy invalidation)
+    int32_t last_task_alive;      // Cached value from shared memory
+    
+} PTO2TensorMapEx;
+
+// -----------------------------------------------------------------------------
+// Extended TensorMap Initialization
+// -----------------------------------------------------------------------------
+
+/**
+ * Initialize extended TensorMap
+ */
+bool pto2_tensormapex_init(PTO2TensorMapEx* tm, int32_t num_buckets, int32_t pool_size);
+
+/**
+ * Initialize extended TensorMap with default sizes
+ */
+bool pto2_tensormapex_init_default(PTO2TensorMapEx* tm);
+
+/**
+ * Destroy extended TensorMap
+ */
+void pto2_tensormapex_destroy(PTO2TensorMapEx* tm);
+
+/**
+ * Reset extended TensorMap to empty state
+ */
+void pto2_tensormapex_reset(PTO2TensorMapEx* tm);
+
+// -----------------------------------------------------------------------------
+// Extended TensorMap Operations
+// -----------------------------------------------------------------------------
+
+/**
+ * Update validity threshold
+ */
+void pto2_tensormapex_sync_validity(PTO2TensorMapEx* tm, int32_t last_task_alive);
+
+/**
+ * Insert a LogicalTensor output into the extended TensorMap
+ * 
+ * Stores the tensor's bounding box and full layout info for overlap detection.
+ * 
+ * @param tm                Extended TensorMap
+ * @param tensor            Logical tensor being produced
+ * @param producer_task_id  Task ID of the producer
+ */
+void pto2_tensormapex_insert(PTO2TensorMapEx* tm, 
+                              const PTO2LogicalTensor* tensor, 
+                              int32_t producer_task_id);
+
+/**
+ * Lookup single producer for a LogicalTensor (first overlap found)
+ * 
+ * Returns the task ID of the most recent producer that overlaps with the input.
+ * 
+ * @param tm      Extended TensorMap
+ * @param tensor  Logical tensor to look up
+ * @return Producer task ID, or -1 if no overlapping producer
+ */
+int32_t pto2_tensormapex_lookup(PTO2TensorMapEx* tm, const PTO2LogicalTensor* tensor);
+
+/**
+ * Find ALL producers that overlap with a LogicalTensor
+ * 
+ * Returns all task IDs whose outputs overlap with the input tensor.
+ * This is needed for correct dependency tracking when multiple tasks
+ * write to overlapping regions.
+ * 
+ * @param tm            Extended TensorMap
+ * @param tensor        Logical tensor to look up
+ * @param producer_ids  Output array of producer task IDs
+ * @param max_producers Maximum size of output array
+ * @return Number of overlapping producers found
+ */
+int32_t pto2_tensormapex_lookup_all(PTO2TensorMapEx* tm, 
+                                     const PTO2LogicalTensor* tensor,
+                                     int32_t* producer_ids,
+                                     int32_t max_producers);
+
+/**
+ * Cleanup retired entries from extended TensorMap
+ */
+void pto2_tensormapex_cleanup_retired(PTO2TensorMapEx* tm, 
+                                       int32_t old_last_task_alive,
+                                       int32_t new_last_task_alive);
+
+// -----------------------------------------------------------------------------
+// Extended TensorMap Internal Helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Compute hash for a LogicalTensor (based on raw_base only)
+ */
+uint32_t pto2_tensormapex_hash(PTO2TensorMapEx* tm, const PTO2LogicalTensor* tensor);
+
+/**
+ * Check if extended entry is valid
+ */
+static inline bool pto2_tensormapex_entry_valid(PTO2TensorMapEx* tm, PTO2TensorMapEntryEx* entry) {
+    return entry->producer_task_id >= tm->last_task_alive;
+}
+
+/**
+ * Check if LogicalTensor overlaps with extended entry (bounding box check)
+ */
+bool pto2_tensormapex_overlap(const PTO2LogicalTensor* tensor, const PTO2TensorMapEntryEx* entry);
+
+/**
+ * Remove extended entry from its bucket chain
+ */
+void pto2_tensormapex_remove_from_bucket(PTO2TensorMapEx* tm, PTO2TensorMapEntryEx* entry);
+
+// -----------------------------------------------------------------------------
+// Extended TensorMap Debug
+// -----------------------------------------------------------------------------
+
+/**
+ * Print extended TensorMap statistics
+ */
+void pto2_tensormapex_print_stats(PTO2TensorMapEx* tm);
+
+/**
+ * Get count of valid entries in extended TensorMap
+ */
+int32_t pto2_tensormapex_valid_count(PTO2TensorMapEx* tm);
 
 #endif // PTO_TENSORMAP_H
